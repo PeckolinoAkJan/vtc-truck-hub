@@ -14,5 +14,8 @@ export async function GET(request: Request) {
   const db = platformEnv().DB, linked = await db.prepare(`SELECT user_id AS userId FROM linked_accounts WHERE provider='steam' AND provider_id=?`).bind(steamId).first<{ userId: string }>(), userId = linked?.userId ?? randomId();
   if (!linked) await db.batch([db.prepare(`INSERT INTO users (id,display_name) VALUES (?,?)`).bind(userId, `Steam ${steamId.slice(-6)}`), db.prepare(`INSERT INTO linked_accounts (user_id,provider,provider_id,username,profile_url) VALUES (?,'steam',?,?,?)`).bind(userId, steamId, `Steam ${steamId.slice(-6)}`, `https://steamcommunity.com/profiles/${steamId}`)]);
   if (desktopToken) await db.prepare(`UPDATE desktop_auth_requests SET user_id=?,status='approved' WHERE token=? AND status='pending' AND expires_at>CURRENT_TIMESTAMP`).bind(userId, decodeURIComponent(desktopToken)).run();
-  return new Response(null, { status: 302, headers: { Location: desktopToken ? "/konto?desktop=connected&provider=steam" : "/konto?connected=steam", "Set-Cookie": await createSession(userId, request) } });
+  const headers=new Headers({Location:desktopToken?"/konto?desktop=connected&provider=steam":"/konto?connected=steam"});
+  headers.append("Set-Cookie",await createSession(userId,request));
+  headers.append("Set-Cookie","desktop_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+  return new Response(null,{status:302,headers});
 }

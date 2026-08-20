@@ -129,3 +129,27 @@ test("multi-VTC Discord workflow is wired end to end", async () => {
   assert.match(admin, /Regelwerk veröffentlichen/);
   assert.match(schema, /discordGuildBranding/);
 });
+
+test("desktop login is gated and telemetry credentials are account-bound", async () => {
+  const [client, clientUi, desktopAuth, bootstrap, access, telemetry, credentials] = await Promise.all([
+    readFile(new URL("../desktop-client/ConvoyHub.Client/MainWindow.xaml.cs", import.meta.url), "utf8"),
+    readFile(new URL("../desktop-client/ConvoyHub.Client/MainWindow.xaml", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/auth/desktop/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/client-bootstrap/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/client-access/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/telemetry/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/client-access.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(clientUi, /x:Name="LoginGate"/);
+  assert.match(clientUi, /GateLogin_Click/);
+  assert.match(client, /RestoreAccountAsync/);
+  assert.match(client, /MonitorAccountBinding/);
+  assert.match(client, /ProtectedData\.Protect/);
+  assert.match(desktopAuth, /verificationUrl/);
+  assert.match(desktopAuth, /provider=\$\{provider\}&token=\$\{encodeURIComponent\(token\)\}/);
+  assert.match(desktopAuth, /clientKey/);
+  assert.match(bootstrap, /Authorization/i);
+  assert.match(access, /issuePersonalClientKey\(user\.id\)/);
+  assert.match(credentials, /vtc-truck-hub:telemetry:\$\{userId\}/);
+  assert.match(telemetry, /Keine aktive Mitgliedschaft für diese Spedition/);
+});

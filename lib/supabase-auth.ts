@@ -1,4 +1,5 @@
 import { ensureDatabase, platformEnv, publicRequestOrigin } from "@/lib/platform";
+import {issuePersonalClientKey} from "@/lib/client-access";
 
 type SupabaseUser = {
   id: string;
@@ -70,6 +71,7 @@ export async function syncSupabaseUser(external: SupabaseUser) {
      VALUES (?,'supabase',?,?)`,
   ).bind(userId, external.id, displayName).run();
   await db.prepare(`INSERT OR IGNORE INTO account_security (user_id) VALUES (?)`).bind(userId).run();
+  await issuePersonalClientKey(userId);
   return { id: userId, email, displayName };
 }
 

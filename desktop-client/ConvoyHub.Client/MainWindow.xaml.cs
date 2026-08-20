@@ -10,6 +10,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -33,7 +34,7 @@ public partial class MainWindow:Window
 
     public MainWindow()
     {
-        InitializeComponent(); Directory.CreateDirectory(dataDir); settings=Load<ClientSettings>(SettingsPath)??new();
+        InitializeComponent(); Directory.CreateDirectory(dataDir); settings=Load<ClientSettings>(SettingsPath)??new();settings.ApiKey=Unprotect(settings.ProtectedApiKey);
         var handler=new HttpClientHandler{CookieContainer=new CookieContainer()};http=new HttpClient(handler){Timeout=TimeSpan.FromSeconds(8)};
         navButtons=[NavOverview,NavTelemetry,NavTrip,NavPlugin,NavLogs,NavSettings];
         settings.VtcKeys??=new();settings.Memberships??=new();if(settings.ApiUrl.Contains("localhost",StringComparison.OrdinalIgnoreCase))settings.ApiUrl="https://vtc-truck-hub.de";if(settings.ApiKey=="demo-client-key")settings.ApiKey="";VtcCombo.Items.Clear();VtcCombo.SelectionChanged+=VtcCombo_SelectionChanged;foreach(var membership in settings.Memberships)VtcCombo.Items.Add(membership);if(VtcCombo.Items.Count>0){var stored=VtcCombo.Items.Cast<VtcChoice>().Select((choice,index)=>(choice,index)).FirstOrDefault(x=>x.choice.Id==settings.ActiveVtcId);VtcCombo.SelectedIndex=stored.choice is null?0:stored.index;}ApiUrlBox.Text=settings.ApiUrl;ApiUrlBox.IsReadOnly=true;ApiKeyBox.Password=settings.ApiKey;ApiKeyBox.IsEnabled=false;ApiKeyBox.ToolTip="Der persönliche Schlüssel wird nach der Anmeldung automatisch und kontogebunden eingesetzt.";IntervalBox.Text=settings.SendIntervalMs.ToString();AutoStartCheck.IsChecked=settings.AutoStart;MinimizeTrayCheck.IsChecked=settings.MinimizeToTray;AutoSyncCheck.IsChecked=settings.AutoSync;AutoTripCheck.IsChecked=settings.AutoTrip;
@@ -41,11 +42,13 @@ public partial class MainWindow:Window
         tray=new Forms.NotifyIcon{Text="VTC Truck Hub Client",Visible=true,Icon=System.Drawing.SystemIcons.Application,ContextMenuStrip=new Forms.ContextMenuStrip()};
         tray.DoubleClick+=(_,_)=>Dispatcher.Invoke(ShowFromTray);tray.ContextMenuStrip.Items.Add("Öffnen",null,(_,_)=>Dispatcher.Invoke(ShowFromTray));tray.ContextMenuStrip.Items.Add("Beenden",null,(_,_)=>Dispatcher.Invoke(()=>{forceClose=true;Close();}));
         trip=Load<TripState>(RecoveryPath)??new();UpdateTripUi();LoadLog();
-        Loaded+=async(_,_)=>{Log("Client gestartet");DetectGamePaths();await CheckServer();StartUdp();_ = MonitorGames();if(settings.AutoSync)_=FlushQueue();_ = CheckForUpdatesAsync();};
+        Loaded+=async(_,_)=>{Log("Client gestartet");DetectGamePaths();await CheckServer();var restored=await RestoreAccountAsync();LoginGate.Visibility=restored?Visibility.Collapsed:Visibility.Visible;StartUdp();_ = MonitorGames();_ = MonitorAccountBinding();if(settings.AutoSync&&restored)_=FlushQueue();_ = CheckForUpdatesAsync();};
     }
 
     T? Load<T>(string path){try{return File.Exists(path)?JsonSerializer.Deserialize<T>(File.ReadAllText(path)):default;}catch{return default;}}
-    void Save<T>(string path,T value)=>File.WriteAllText(path,JsonSerializer.Serialize(value,new JsonSerializerOptions{WriteIndented=true}));
+    void Save<T>(string path,T value){if(value is ClientSettings client)client.ProtectedApiKey=Protect(client.ApiKey);File.WriteAllText(path,JsonSerializer.Serialize(value,new JsonSerializerOptions{WriteIndented=true}));}
+    static string Protect(string value){if(string.IsNullOrWhiteSpace(value))return "";return Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(value),null,DataProtectionScope.CurrentUser));}
+    static string Unprotect(string value){try{return string.IsNullOrWhiteSpace(value)?"":Encoding.UTF8.GetString(ProtectedData.Unprotect(Convert.FromBase64String(value),null,DataProtectionScope.CurrentUser));}catch{return "";}}
     void Log(string message){var line=$"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}";File.AppendAllText(LogPath,line+Environment.NewLine);Dispatcher.Invoke(()=>{LogBox.AppendText(line+Environment.NewLine);LogBox.ScrollToEnd();});}
     void LoadLog(){if(File.Exists(LogPath))LogBox.Text=string.Join(Environment.NewLine,File.ReadLines(LogPath).TakeLast(300));}
     string Api(string path)=>settings.ApiUrl.TrimEnd('/')+path;
@@ -82,7 +85,9 @@ public partial class MainWindow:Window
     static void StartUri(string uri){Process.Start(new ProcessStartInfo(uri){UseShellExecute=true});}
     string SelectedVtc()=>Dispatcher.CheckAccess()?(VtcCombo.SelectedItem as VtcChoice)?.Id??"":Dispatcher.Invoke(SelectedVtc);
 
-    async void Login_Click(object sender,RoutedEventArgs e){try{AccountState.Text="Konto wird verbunden …";var json=JsonSerializer.Serialize(new{email=EmailBox.Text.Trim(),password=PasswordInput.Password});var res=await http.PostAsync(Api("/api/auth/login"),new StringContent(json,Encoding.UTF8,"application/json"));if(!res.IsSuccessStatusCode){AccountState.Text=await ReadApiError(res,"Anmeldung fehlgeschlagen");return;}var doc=JsonDocument.Parse(await res.Content.ReadAsStringAsync());var user=doc.RootElement.GetProperty("user");ApplyAuthenticatedUser(user);await LoadAccountBindingAsync();Log("Konto mit E-Mail und Passwort angemeldet und Spedition verbunden");}catch(Exception ex){AccountState.Text="Server nicht erreichbar";Log("Login fehlgeschlagen: "+ex.Message);}}
+    async Task PasswordLoginAsync(string email,string password,string twoFactorCode=""){try{AccountState.Text="Konto wird verbunden …";var json=JsonSerializer.Serialize(new{email=email.Trim(),password,twoFactorCode});var res=await http.PostAsync(Api("/api/auth/login"),new StringContent(json,Encoding.UTF8,"application/json"));if(!res.IsSuccessStatusCode){AccountState.Text=await ReadApiError(res,"Anmeldung fehlgeschlagen");return;}using var doc=JsonDocument.Parse(await res.Content.ReadAsStringAsync());ApplyAuthenticatedUser(doc.RootElement.GetProperty("user"));await LoadAccountBindingAsync();Log("Konto mit E-Mail und Passwort angemeldet und Spedition verbunden");}catch(Exception ex){AccountState.Text="Server nicht erreichbar";Log("Login fehlgeschlagen: "+ex.Message);}}
+    async void Login_Click(object sender,RoutedEventArgs e)=>await PasswordLoginAsync(EmailBox.Text,PasswordInput.Password);
+    async void GateLogin_Click(object sender,RoutedEventArgs e)=>await PasswordLoginAsync(GateEmailBox.Text,GatePasswordInput.Password,GateTwoFactorBox.Text);
     async void OAuthLogin_Click(object sender,RoutedEventArgs e)
     {
         var provider=((Button)sender).Tag?.ToString()??"";
@@ -132,24 +137,52 @@ public partial class MainWindow:Window
         }
         ApplyMemberships(document.RootElement);
     }
+    async Task<bool> RestoreAccountAsync()
+    {
+        if(string.IsNullOrWhiteSpace(settings.ApiKey)||string.IsNullOrWhiteSpace(settings.UserId))return false;
+        try
+        {
+            using var request=new HttpRequestMessage(HttpMethod.Get,Api("/api/v1/client-bootstrap"));
+            request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",settings.ApiKey);
+            var response=await http.SendAsync(request,shutdown.Token);
+            if(!response.IsSuccessStatusCode)return false;
+            using var document=JsonDocument.Parse(await response.Content.ReadAsStringAsync(shutdown.Token));
+            ApplyAuthenticatedUser(document.RootElement.GetProperty("user"));
+            ApplyMemberships(document.RootElement);
+            Log("Gespeicherte, kontogebundene Clientsitzung wiederhergestellt");
+            return true;
+        }
+        catch(Exception ex){Log("Gespeicherte Anmeldung konnte nicht wiederhergestellt werden: "+ex.Message);return false;}
+    }
+    async Task MonitorAccountBinding()
+    {
+        while(!shutdown.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromMinutes(1),shutdown.Token).ContinueWith(_=>{});
+            if(shutdown.IsCancellationRequested||string.IsNullOrWhiteSpace(settings.ApiKey)||string.IsNullOrWhiteSpace(settings.UserId))continue;
+            await RestoreAccountAsync();
+        }
+    }
     void ApplyMemberships(JsonElement response)
     {
         if(response.TryGetProperty("apiBase",out var apiBase)&&Uri.TryCreate(apiBase.GetString(),UriKind.Absolute,out var uri)){settings.ApiUrl=uri.GetLeftPart(UriPartial.Authority);ApiUrlBox.Text=settings.ApiUrl;}
+        if(response.TryGetProperty("clientKey",out var accountKey)&&!string.IsNullOrWhiteSpace(accountKey.GetString()))settings.ApiKey=accountKey.GetString()!;
         VtcCombo.Items.Clear();settings.Memberships.Clear();
         if(response.TryGetProperty("memberships",out var memberships))foreach(var membership in memberships.EnumerateArray())
         {
             string id=membership.TryGetProperty("id",out var idNode)?idNode.GetString()??"":"",name=membership.TryGetProperty("name",out var nameNode)?nameNode.GetString()??"Spedition":"Spedition",tag=membership.TryGetProperty("tag",out var tagNode)?tagNode.GetString()??"VTC":"VTC",role=membership.TryGetProperty("roleName",out var roleNode)?roleNode.GetString()??"Fahrer":"Fahrer";
             if(string.IsNullOrWhiteSpace(id))continue;
-            if(membership.TryGetProperty("clientKey",out var keyNode)&&!string.IsNullOrWhiteSpace(keyNode.GetString()))settings.VtcKeys[id]=keyNode.GetString()!;
+            if(membership.TryGetProperty("clientKey",out var keyNode)&&!string.IsNullOrWhiteSpace(keyNode.GetString()))settings.ApiKey=keyNode.GetString()!;
+            settings.VtcKeys[id]=settings.ApiKey;
             var choice=new VtcChoice(id,name,tag,role);settings.Memberships.Add(choice);VtcCombo.Items.Add(choice);
         }
-        if(VtcCombo.Items.Count>0){var preferred=VtcCombo.Items.Cast<VtcChoice>().Select((choice,index)=>(choice,index)).FirstOrDefault(x=>x.choice.Id==settings.ActiveVtcId);VtcCombo.SelectedIndex=preferred.choice is null?0:preferred.index;AccountState.Text=$"{settings.DriverName} · Spedition und Clientschlüssel verbunden";}else{settings.ActiveVtcId="";settings.ApiKey="";ApiKeyBox.Password="";CompanyTagText.Text="VTC";CompanyNameText.Text="Keine Spedition zugeordnet";CompanyRoleText.Text="Bitte einer Spedition beitreten";AccountState.Text="Angemeldet, aber noch keiner Spedition zugeordnet";}
-        Save(SettingsPath,settings);
+        if(VtcCombo.Items.Count>0){var preferred=VtcCombo.Items.Cast<VtcChoice>().Select((choice,index)=>(choice,index)).FirstOrDefault(x=>x.choice.Id==settings.ActiveVtcId);VtcCombo.SelectedIndex=preferred.choice is null?0:preferred.index;AccountState.Text=$"{settings.DriverName} · Spedition und Clientschlüssel verbunden";}else{settings.ActiveVtcId="";ApiKeyBox.Password=settings.ApiKey;CompanyTagText.Text="VTC";CompanyNameText.Text="Keine Spedition zugeordnet";CompanyRoleText.Text="Beitritt wird automatisch synchronisiert";AccountState.Text="Angemeldet · noch keiner Spedition zugeordnet";}
+        LoginGate.Visibility=Visibility.Collapsed;Save(SettingsPath,settings);
     }
     void VtcCombo_SelectionChanged(object sender,SelectionChangedEventArgs e)
     {
         if(VtcCombo.SelectedItem is not VtcChoice choice)return;
-        settings.ActiveVtcId=choice.Id;settings.ApiKey=settings.VtcKeys.TryGetValue(choice.Id,out var key)?key:"";ApiKeyBox.Password=settings.ApiKey;CompanyTagText.Text=choice.Tag;CompanyNameText.Text=choice.Name;CompanyRoleText.Text=choice.RoleName;Save(SettingsPath,settings);
+        settings.ActiveVtcId=choice.Id;if(settings.VtcKeys.TryGetValue(choice.Id,out var key)&&!string.IsNullOrWhiteSpace(key))settings.ApiKey=key;ApiKeyBox.Password=settings.ApiKey;CompanyTagText.Text=choice.Tag;CompanyNameText.Text=choice.Name;CompanyRoleText.Text=choice.RoleName;Save(SettingsPath,settings);
         if(string.IsNullOrWhiteSpace(settings.ApiKey)){AccountState.Text=$"{choice.Name}: Clientschlüssel fehlt – bitte erneut anmelden";ApiQuickState.Text="SCHLÜSSEL FEHLT";}else{AccountState.Text=$"{settings.DriverName} · {choice.Name} verbunden";ApiQuickState.Text="KONTO VERBUNDEN";}
     }
     async Task CheckForUpdatesAsync(bool manual=false)
@@ -214,7 +247,7 @@ public partial class MainWindow:Window
     void ShowFromTray(){Show();WindowState=WindowState.Normal;Activate();}void Window_Closing(object? sender,System.ComponentModel.CancelEventArgs e){if(!forceClose&&settings.MinimizeToTray){e.Cancel=true;Hide();tray.ShowBalloonTip(1500,"VTC Truck Hub","Der Client läuft im Infobereich weiter.",Forms.ToolTipIcon.Info);return;}shutdown.Cancel();udp?.Dispose();tray.Visible=false;tray.Dispose();}
 }
 
-public sealed class ClientSettings{public string ApiUrl{get;set;}="https://vtc-truck-hub.de";public string ApiKey{get;set;}="";public string UserId{get;set;}="";public string DriverName{get;set;}="Fahrer";public string AccountEmail{get;set;}="";public string ActiveVtcId{get;set;}="";public Dictionary<string,string> VtcKeys{get;set;}=new();public List<VtcChoice> Memberships{get;set;}=new();public int SendIntervalMs{get;set;}=1000;public bool AutoStart{get;set;}public bool MinimizeToTray{get;set;}=true;public bool AutoSync{get;set;}=true;public bool AutoTrip{get;set;}=true;}
+public sealed class ClientSettings{public string ApiUrl{get;set;}="https://vtc-truck-hub.de";[JsonIgnore]public string ApiKey{get;set;}="";public string ProtectedApiKey{get;set;}="";public string UserId{get;set;}="";public string DriverName{get;set;}="Fahrer";public string AccountEmail{get;set;}="";public string ActiveVtcId{get;set;}="";[JsonIgnore]public Dictionary<string,string> VtcKeys{get;set;}=new();public List<VtcChoice> Memberships{get;set;}=new();public int SendIntervalMs{get;set;}=1000;public bool AutoStart{get;set;}public bool MinimizeToTray{get;set;}=true;public bool AutoSync{get;set;}=true;public bool AutoTrip{get;set;}=true;}
 public sealed record VtcChoice(string Id,string Name,string Tag,string RoleName){public override string ToString()=>$"{Name} ({Tag})";}
 public sealed class TripState{public string? Id{get;set;}public string? JobKey{get;set;}public bool Active{get;set;}public string Status{get;set;}="Keine aktive Fahrt";public DateTime StartedAt{get;set;}}
 public sealed record SendResult(bool Ok,string? TripId=null,string? Lifecycle=null,int PointsTotal=0);

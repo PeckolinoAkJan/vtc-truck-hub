@@ -552,5 +552,30 @@
         </TabItem>
       </TabControl>
     </Grid>
+    <Grid x:Name="LoginGate" Grid.ColumnSpan="2" Panel.ZIndex="100" Background="#F2071118">
+      <Image Source="Assets/vtc-truck-hub-login.png" Stretch="UniformToFill" Opacity="0.28" />
+      <Border Background="#F20A141B" BorderBrush="#A88332" BorderThickness="1" CornerRadius="16" Width="650" Padding="34" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel>
+          <TextBlock Text="VTC TRUCK HUB" Foreground="#F2C45D" FontSize="12" FontWeight="Black" HorizontalAlignment="Center" />
+          <TextBlock Text="FAHRER-ANMELDUNG" Foreground="White" FontSize="30" FontWeight="Black" HorizontalAlignment="Center" Margin="0,9,0,5" />
+          <TextBlock Text="Melde dich an, bevor der Client, die Telemetrie oder ein Spiel gestartet werden kann." Foreground="#9FB0B8" TextAlignment="Center" TextWrapping="Wrap" Margin="20,0,20,22" />
+          <UniformGrid Columns="3" Margin="0,0,0,20">
+            <Button Content="G  GOOGLE" Background="#FFFFFF" Foreground="#24344A" Padding="12" Margin="0,0,6,0" Click="OAuthLogin_Click" Tag="google" />
+            <Button Content="●  STEAM" Background="#173A55" Foreground="White" Padding="12" Margin="3,0" Click="OAuthLogin_Click" Tag="steam" />
+            <Button Content="◉  DISCORD" Background="#5865F2" Foreground="White" Padding="12" Margin="6,0,0,0" Click="OAuthLogin_Click" Tag="discord" />
+          </UniformGrid>
+          <Grid Margin="0,0,0,14">
+            <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
+            <StackPanel Margin="0,0,6,0"><TextBlock Text="E-MAIL" Style="{StaticResource FieldLabel}" /><TextBox x:Name="GateEmailBox" /></StackPanel>
+            <StackPanel Grid.Column="1" Margin="6,0,0,0"><TextBlock Text="PASSWORT" Style="{StaticResource FieldLabel}" /><PasswordBox x:Name="GatePasswordInput" /></StackPanel>
+          </Grid>
+          <TextBlock Text="ZWEI-FAKTOR-CODE (FALLS AKTIVIERT)" Style="{StaticResource FieldLabel}" />
+          <TextBox x:Name="GateTwoFactorBox" Margin="0,0,0,14" />
+          <Button Content="SICHER ANMELDEN UND CLIENT VERBINDEN" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch" Click="GateLogin_Click" />
+          <TextBlock Text="{Binding Text, ElementName=AccountState}" Foreground="#F2C45D" TextAlignment="Center" TextWrapping="Wrap" Margin="0,16,0,0" />
+          <TextBlock Text="Der persönliche Telemetrieschlüssel wird automatisch kontogebunden geladen. Eine manuelle Eingabe ist nicht erforderlich." Foreground="#738791" FontSize="9" TextAlignment="Center" TextWrapping="Wrap" Margin="14,10,14,0" />
+        </StackPanel>
+      </Border>
+    </Grid>
   </Grid>
 </Window>

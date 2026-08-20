@@ -13,6 +13,6 @@ export async function POST(request: Request) {
   await audit("user.login", "session", null, user.id, { method: "supabase-oauth" });
   const headers = new Headers();
   headers.append("Set-Cookie", await createSession(user.id, request));
-  headers.append("Set-Cookie", "desktop_auth=; Path=/api/auth; HttpOnly; SameSite=Lax; Max-Age=0");
+  headers.append("Set-Cookie", "desktop_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
   return Response.json({ user }, { headers });
 }

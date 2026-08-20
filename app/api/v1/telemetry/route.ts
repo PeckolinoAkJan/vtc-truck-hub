@@ -297,6 +297,12 @@ export async function POST(request: Request) {
   if(authorization.userId&&p.userId!==authorization.userId)return apiError("Der Telemetrie-Schlüssel gehört zu einem anderen Benutzerkonto",403);
   if (!p.vtcId || !p.userId || !["ETS2", "ATS"].includes(p.game ?? ""))
     return apiError("vtcId, userId und gültiges Spiel erforderlich");
+  if(authorization.userId&&!authorization.vtcId){
+    const membership=await platformEnv().DB.prepare(
+      `SELECT id FROM memberships WHERE user_id=? AND vtc_id=? AND status='active'`,
+    ).bind(authorization.userId,p.vtcId).first<{id:string}>();
+    if(!membership)return apiError("Keine aktive Mitgliedschaft für diese Spedition",403);
+  }
   if (
     !Number.isFinite(p.latitude) ||
     !Number.isFinite(p.longitude) ||
@@ -605,6 +611,10 @@ export async function GET(request: Request) {
   const authorization=await authorized(request);
   if (!authorization)
     return apiError("Ungültiger Telemetrie-Schlüssel", 401);
-  const rows = authorization.vtcId?await platformEnv().DB.prepare(`SELECT * FROM telemetry WHERE vtc_id=? ORDER BY recorded_at DESC LIMIT 100`).bind(authorization.vtcId).all():await platformEnv().DB.prepare(`SELECT * FROM telemetry ORDER BY recorded_at DESC LIMIT 100`).all();
+  const rows = authorization.vtcId
+    ? await platformEnv().DB.prepare(`SELECT * FROM telemetry WHERE vtc_id=? ORDER BY recorded_at DESC LIMIT 100`).bind(authorization.vtcId).all()
+    : authorization.userId
+      ? await platformEnv().DB.prepare(`SELECT * FROM telemetry WHERE user_id=? ORDER BY recorded_at DESC LIMIT 100`).bind(authorization.userId).all()
+      : await platformEnv().DB.prepare(`SELECT * FROM telemetry ORDER BY recorded_at DESC LIMIT 100`).all();
   return Response.json({ data: rows.results });
 }

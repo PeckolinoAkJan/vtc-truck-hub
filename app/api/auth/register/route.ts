@@ -7,6 +7,7 @@ import {
   platformEnv,
   randomId,
 } from "@/lib/platform";
+import {issuePersonalClientKey} from "@/lib/client-access";
 export async function POST(request: Request) {
   await ensureDatabase();
   const body = (await request.json()) as {
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
       )
       .bind(randomId(), id),
   ]);
+  await issuePersonalClientKey(id);
   await audit("user.register", "user", id, id, { method: "password" });
   return Response.json(
     { user: { id, email, displayName: name } },

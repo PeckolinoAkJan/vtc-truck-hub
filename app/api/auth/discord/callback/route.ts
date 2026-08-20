@@ -70,6 +70,6 @@ export async function GET(request: Request) {
   });
   headers.append("Set-Cookie", await createSession(userId, request));
   headers.append("Set-Cookie", "oauth_state=; Path=/api/auth/discord; HttpOnly; SameSite=Lax; Max-Age=0");
-  headers.append("Set-Cookie", "desktop_auth=; Path=/api/auth; HttpOnly; SameSite=Lax; Max-Age=0");
+  headers.append("Set-Cookie", "desktop_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
   return new Response(null, { status: 302, headers });
 }

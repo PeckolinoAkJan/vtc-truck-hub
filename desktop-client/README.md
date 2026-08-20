@@ -1,12 +1,13 @@
 # VTC Truck Hub Windows-Telemetrieclient
 
-Der .NET-8-Client empfängt JSON-Pakete eines SCS-Telemetrie-Plugins ausschließlich über `127.0.0.1:35055`, überträgt sie authentifiziert an `/api/v1/telemetry` und puffert fehlgeschlagene Pakete lokal für die automatische Nachsynchronisierung.
+Der .NET-8-Client verlangt beim Start eine Kontoanmeldung, empfängt JSON-Pakete des SCS-Telemetrie-Plugins ausschließlich über `127.0.0.1:35055`, überträgt sie kontogebunden an `/api/v1/telemetry` und puffert fehlgeschlagene Pakete lokal für die automatische Nachsynchronisierung.
 
 Umgebungsvariablen:
 
-- `CONVOYHUB_API` – vollständige Telemetrie-URL
-- `CONVOYHUB_TELEMETRY_KEY` – serverseitig vergebener API-Schlüssel
-- `CONVOYHUB_PLUGIN_PORT` – lokaler UDP-Port, Standard `35055`
+- Server-URL: fest `https://vtc-truck-hub.de`
+- persönlicher Telemetrieschlüssel: nach Google-, Steam-, Discord- oder Passwort-Anmeldung automatisch erzeugt und per Windows-DPAPI geschützt gespeichert
+- Speditionen und Rollen: nach der Anmeldung sowie danach minütlich automatisch synchronisiert
+- lokaler Plugin-Port: `35055`
 
 Start: `dotnet run --project ConvoyHub.Client`
 
