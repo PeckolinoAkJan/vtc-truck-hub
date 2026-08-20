@@ -70,6 +70,8 @@ type Data = {
     createdAt: string;
   }>;
   access: { permissions: string[]; sensitive: boolean };
+  discordIntegration?: { guildId?: string; displayName?: string; deliveryChannelId?: string } | null;
+  discordInviteUrl?: string | null;
 };
 const split = (v: FormDataEntryValue | null) =>
   String(v ?? "")
@@ -78,11 +80,12 @@ const split = (v: FormDataEntryValue | null) =>
     .filter(Boolean);
 export default function Management() {
   const [data, setData] = useState<Data | null>(null),
+    [vtcId] = useState(() => typeof location === "undefined" ? "vtc-ngl" : new URLSearchParams(location.search).get("vtcId") ?? "vtc-ngl"),
     [tab, setTab] = useState("Personal"),
     [message, setMessage] = useState(""),
     [selected, setSelected] = useState<Driver | null>(null);
   async function load() {
-    const r = await fetch("/api/v1/management?vtcId=vtc-ngl");
+    const r = await fetch(`/api/v1/management?vtcId=${encodeURIComponent(vtcId)}`);
     if (r.status === 401 || r.status === 403) {
       location.href = "/konto";
       return;
@@ -96,7 +99,7 @@ export default function Management() {
     const r = await fetch("/api/v1/management", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vtcId: "vtc-ngl", ...(body as object) }),
+        body: JSON.stringify({ vtcId, ...(body as object) }),
       }),
       j = await r.json();
     setMessage(
@@ -134,6 +137,7 @@ export default function Management() {
           "Rollen & Rechte",
           "Abteilungen",
           "Speditionsprofil",
+          "Discord-Bot",
           "Personalverlauf",
         ].map((x) => (
           <button
@@ -502,6 +506,24 @@ export default function Management() {
               </label>
             </div>
             <button className="primary">Profil speichern</button>
+          </form>
+        </section>
+      )}
+      {tab === "Discord-Bot" && (
+        <section className="manage-panel wide discord-vtc-panel">
+          <div className="discord-vtc-hero">
+            <div><span className="kicker">VTC TRUCK HUB BOT</span><h2>Aufträge automatisch an Discord melden</h2><p>Lade den Bot auf deinen Server ein und hinterlege danach Server-ID und Kanal-ID. Jeder im Spiel abgegebene Auftrag wird einmalig als übersichtliche Einbettung gesendet.</p></div>
+            {data.discordInviteUrl ? <a className="primary" href={data.discordInviteUrl} target="_blank" rel="noreferrer">Bot zu Discord einladen</a> : <span className="manage-warning">Bot-Einladung ist noch nicht zentral konfiguriert.</span>}
+          </div>
+          <ol className="discord-steps"><li>Bot einladen und Berechtigungen bestätigen</li><li>Discord-Entwicklermodus aktivieren und IDs kopieren</li><li>Auftragskanal unten speichern</li></ol>
+          <form className="manage-form" onSubmit={async (event) => {event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));await act({action:"saveDiscordIntegration",discord:values});}}>
+            <div className="manage-form-grid">
+              <label>Servername (intern)<input name="displayName" defaultValue={data.discordIntegration?.displayName ?? ""} placeholder="Meine Spedition" /></label>
+              <label>Discord-Server-ID<input name="guildId" inputMode="numeric" pattern="[0-9]{17,20}" defaultValue={data.discordIntegration?.guildId ?? ""} placeholder="123456789012345678" required /></label>
+              <label>Auftragskanal-ID<input name="deliveryChannelId" inputMode="numeric" pattern="[0-9]{17,20}" defaultValue={data.discordIntegration?.deliveryChannelId ?? ""} placeholder="123456789012345678" required /></label>
+            </div>
+            <div className="discord-embed-preview"><span>VORSCHAU</span><h3>✅ Auftrag abgegeben</h3><div><b>Fahrer</b><b>Spiel</b><b>Distanz</b><small>Max Mustermann</small><small>ETS2</small><small>842,4 km</small></div><p>Hamburg → Mailand · Fracht: Maschinen · wartet auf Fahrerbestätigung</p></div>
+            <button>Discord-Auftragskanal speichern</button>
           </form>
         </section>
       )}

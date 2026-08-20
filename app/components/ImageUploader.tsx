@@ -8,7 +8,7 @@ export default function ImageUploader({
   current,
   onUploaded,
 }: {
-  purpose: "avatar" | "company_logo" | "company_header" | "gallery";
+  purpose: "avatar" | "company_logo" | "company_header" | "gallery" | "discord_image";
   vtcId?: string;
   label: string;
   current?: string | null;

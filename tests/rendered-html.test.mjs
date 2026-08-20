@@ -110,3 +110,22 @@ test("release-critical website and client assets exist", async () => {
     access(new URL("../desktop-client/ConvoyHub.Client/plugins/convoyhub_scs.dll", import.meta.url)),
   ]);
 });
+
+test("multi-VTC Discord workflow is wired end to end", async () => {
+  const [bot, telemetry, management, admin, schema] = await Promise.all([
+    readFile(new URL("../discord-bot/src/index.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/telemetry/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/verwaltung/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/gruender/discord-bot/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(bot, /rules_accept:/);
+  assert.match(bot, /members\/\$\{userId\}\/roles/);
+  assert.match(telemetry, /notifyDiscordDelivery/);
+  assert.match(telemetry, /discord_delivery_log/);
+  assert.match(management, /saveDiscordIntegration/);
+  assert.match(management, /Bot zu Discord einladen/);
+  assert.match(admin, /Willkommensbild/);
+  assert.match(admin, /Regelwerk veröffentlichen/);
+  assert.match(schema, /discordGuildBranding/);
+});

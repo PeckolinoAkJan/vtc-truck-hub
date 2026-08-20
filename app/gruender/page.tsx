@@ -68,6 +68,7 @@ export default function Founder() {
     <aside>
       <a className="brand" href="/" aria-label="VTC Truck Hub Startseite"><span className="brand-mark">VH</span><span>VTC TRUCK <span>HUB</span></span></a>
       <small>PLATTFORM-ADMINISTRATION</small><strong>{data.founder.displayName}</strong><span>{data.founder.email}</span>
+      <a className="discord-admin-link" href="/gruender/discord-bot">Discord-Bot erweitern</a>
       <nav aria-label="Adminbereiche">{tabs.map((name) => <button type="button" className={tab === name ? "active" : ""} onClick={() => { setTab(name); setError(""); setNotice(""); }} key={name}>{name}</button>)}</nav>
       <a href="/dashboard">Zum VTC-Dashboard</a>
     </aside>
