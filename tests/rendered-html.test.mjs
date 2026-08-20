@@ -144,6 +144,9 @@ test("desktop login is gated and telemetry credentials are account-bound", async
   assert.match(clientUi, /GateLogin_Click/);
   assert.match(client, /RestoreAccountAsync/);
   assert.match(client, /MonitorAccountBinding/);
+  assert.match(client, /NormalizeApiUrl/);
+  assert.match(client, /return "https:\/\/vtc-truck-hub\.de"/);
+  assert.doesNotMatch(client, /settings\.ApiUrl\.TrimEnd/);
   assert.match(client, /ProtectedData\.Protect/);
   assert.match(desktopAuth, /verificationUrl/);
   assert.match(desktopAuth, /provider=\$\{provider\}&token=\$\{encodeURIComponent\(token\)\}/);
