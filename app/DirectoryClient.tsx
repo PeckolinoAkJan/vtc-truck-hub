@@ -28,6 +28,8 @@ type Vtc = {
 };
 export default function DirectoryClient() {
   const [rows, setRows] = useState<Vtc[]>([]),
+    [authenticated, setAuthenticated] = useState(false),
+    [clientRelease, setClientRelease] = useState<{version:string;downloadUrl:string}|null>(null),
     [query, setQuery] = useState(""),
     [game, setGame] = useState(""),
     [language, setLanguage] = useState(""),
@@ -45,6 +47,13 @@ export default function DirectoryClient() {
     try {
       setFavorites(JSON.parse(localStorage.getItem("vtc-favorites") || "[]"));
     } catch {}
+    Promise.all([
+      fetch("/api/auth/me").then((r) => r.ok),
+      fetch("/api/v1/client-download").then((r) => r.ok ? r.json() : null),
+    ]).then(([signedIn, download]) => {
+      setAuthenticated(signedIn);
+      setClientRelease(download?.release ?? null);
+    }).catch(() => {});
   }, []);
   useEffect(() => {
     const p = new URLSearchParams();
@@ -119,8 +128,17 @@ export default function DirectoryClient() {
           <a href="/statistik">Ranglisten</a>
         </nav>
         <div className="nav-actions">
+          {authenticated && clientRelease?.downloadUrl && (
+            <a
+              className="client-download"
+              href={clientRelease.downloadUrl}
+              title={`VTC Truck Hub Client ${clientRelease.version}`}
+            >
+              Client downloaden
+            </a>
+          )}
           <a className="login" href="/konto">
-            Anmelden
+            {authenticated ? "Mein Konto" : "Anmelden"}
           </a>
           <a className="primary" href="#create">
             Spedition gründen
