@@ -311,7 +311,7 @@ export async function POST(request: Request) {
       },
       {
         headers: {
-          "Content-Disposition": `attachment; filename="convoyhub-export-${user.id}.json"`,
+          "Content-Disposition": `attachment; filename="vtc-truck-hub-export-${user.id}.json"`,
         },
       },
     );

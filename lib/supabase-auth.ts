@@ -77,9 +77,8 @@ export async function syncSupabaseUser(external: SupabaseUser) {
 type SupabaseMembership = {
   vtc_id?: string | null;
   role?: string | null;
-  status?: string | null;
 };
-type SupabaseVtc={id:string;slug?:string|null;name?:string|null;tag?:string|null;description?:string|null;country?:string|null;city?:string|null;discord_url?:string|null;website_url?:string|null;created_by?:string|null;created_at?:string|null};
+type SupabaseVtc={id:string;slug?:string|null;name?:string|null;tag?:string|null;description?:string|null;discord_url?:string|null;website_url?:string|null;created_by?:string|null;created_at?:string|null};
 
 function importedRole(role: string | null | undefined) {
   const normalized = String(role ?? "driver").trim().toLowerCase();
@@ -110,24 +109,24 @@ export async function syncSupabaseMemberships(accessToken: string, externalUserI
   const cfg = config();
   if (!cfg) return;
   const target = new URL(`${cfg.url}/rest/v1/vtc_members`);
-  target.searchParams.set("select", "vtc_id,role,status");
+  target.searchParams.set("select", "vtc_id,role");
   target.searchParams.set("user_id", `eq.${externalUserId}`);
   const response = await fetch(target, {
     headers: { apikey: cfg.key, Authorization: `Bearer ${accessToken}` },
   });
   if (!response.ok) return;
   const memberships = await response.json() as SupabaseMembership[];
-  const vtcResponse=await fetch(`${cfg.url}/rest/v1/vtcs?select=id,slug,name,tag,description,country,city,discord_url,website_url,created_by,created_at`,{headers:{apikey:cfg.key,Authorization:`Bearer ${accessToken}`}});
+  const vtcResponse=await fetch(`${cfg.url}/rest/v1/vtcs?select=id,slug,name,tag,description,discord_url,website_url,created_by,created_at`,{headers:{apikey:cfg.key,Authorization:`Bearer ${accessToken}`}});
   const availableVtcs=vtcResponse.ok?await vtcResponse.json() as SupabaseVtc[]:[];
   const membershipIds=new Set(memberships.map(m=>String(m.vtc_id??"")));
   const relevant=availableVtcs.filter(v=>membershipIds.has(v.id)||v.created_by===externalUserId);
   const db = platformEnv().DB;
   for(const vtc of relevant){
     const name=String(vtc.name??"").trim(),tag=String(vtc.tag??"").trim();if(!name||!tag)continue;
-    await db.prepare(`INSERT INTO vtcs (id,slug,name,tag,description,country,city,discord_url,website_url,driver_count,created_at) VALUES (?,?,?,?,?,?,?,?,?,0,COALESCE(?,CURRENT_TIMESTAMP)) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,name=excluded.name,tag=excluded.tag,description=excluded.description,country=excluded.country,city=excluded.city,discord_url=excluded.discord_url,website_url=excluded.website_url`).bind(vtc.id,String(vtc.slug??vtc.id),name,tag,vtc.description??null,vtc.country??null,vtc.city??null,vtc.discord_url??null,vtc.website_url??null,vtc.created_at??null).run();
+    await db.prepare(`INSERT INTO vtcs (id,slug,name,tag,description,country,city,games,languages,timezone,discord_url,website_url,driver_count,created_at) VALUES (?,?,?,?,?,'Deutschland',NULL,'ETS2,ATS','Deutsch','Europe/Berlin',?,?,0,COALESCE(?,CURRENT_TIMESTAMP)) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,name=excluded.name,tag=excluded.tag,description=excluded.description,discord_url=excluded.discord_url,website_url=excluded.website_url`).bind(vtc.id,String(vtc.slug??vtc.id),name,tag,vtc.description??"Virtuelle Spedition auf VTC Truck Hub",vtc.discord_url??null,vtc.website_url??null,vtc.created_at??null).run();
   }
   const complete=[...memberships];
-  for(const founded of relevant.filter(v=>v.created_by===externalUserId&&!membershipIds.has(v.id)))complete.push({vtc_id:founded.id,role:"owner",status:"active"});
+  for(const founded of relevant.filter(v=>v.created_by===externalUserId&&!membershipIds.has(v.id)))complete.push({vtc_id:founded.id,role:"owner"});
   for (const membership of complete) {
     const vtcId = String(membership.vtc_id ?? "").trim();
     if (!vtcId) continue;
@@ -146,13 +145,88 @@ export async function syncSupabaseMemberships(accessToken: string, externalUserI
       vtcId,
       localUserId,
       roleId,
-      membership.status === "inactive" ? "inactive" : "active",
+      "active",
     ).run();
     await db.prepare(
       `INSERT OR IGNORE INTO personnel_records (id,vtc_id,user_id,status,language,timezone)
        VALUES (?,?,?,'active','Deutsch','Europe/Berlin')`,
     ).bind(`personnel-import-${vtcId}-${localUserId}`, vtcId, localUserId).run();
   }
+}
+
+type HubUser={user_id:string;display_name:string|null};
+type SupabaseAdminUser={id:string;email?:string|null;user_metadata?:Record<string,unknown>};
+type HubVtc={vtc_id:string;slug:string|null;name:string|null;tag:string|null;description:string|null;discord_url:string|null;website_url:string|null;is_demo:boolean|null;created_at:string|null};
+type HubMembership={vtc_id:string;user_id:string;role:string|null;joined_at:string|null};
+let directorySyncPromise:Promise<{users:number;vtcs:number;memberships:number}>|null=null;
+let directorySyncedAt=0;
+
+async function serviceRows<T>(path:string){
+  const env=platformEnv(),base=env.SUPABASE_URL?.replace(/\/$/,""),key=env.SUPABASE_SERVICE_ROLE_KEY;
+  if(!base||!key)throw new Error("Supabase-Serverabgleich ist nicht konfiguriert");
+  const response=await fetch(`${base}/rest/v1/${path}`,{headers:{apikey:key,Authorization:`Bearer ${key}`}});
+  if(!response.ok)throw new Error(`Supabase-Abgleich fehlgeschlagen (${response.status})`);
+  return await response.json() as T[];
+}
+
+async function serviceAuthUsers(){
+  const env=platformEnv(),base=env.SUPABASE_URL?.replace(/\/$/,""),key=env.SUPABASE_SERVICE_ROLE_KEY;
+  if(!base||!key)throw new Error("Supabase-Serverabgleich ist nicht konfiguriert");
+  const response=await fetch(`${base}/auth/v1/admin/users?page=1&per_page=1000`,{headers:{apikey:key,Authorization:`Bearer ${key}`}});
+  if(!response.ok)throw new Error(`Supabase-Benutzerabgleich fehlgeschlagen (${response.status})`);
+  const payload=await response.json() as {users?:SupabaseAdminUser[]};
+  return payload.users??[];
+}
+
+export async function syncSupabaseDirectory(force=false){
+  if(!force&&directorySyncedAt&&Date.now()-directorySyncedAt<300000)return {users:0,vtcs:0,memberships:0};
+  if(directorySyncPromise)return directorySyncPromise;
+  directorySyncPromise=(async()=>{
+    await ensureDatabase();
+    const [authUsers,profiles,vtcs,memberships]=await Promise.all([
+      serviceAuthUsers(),
+      serviceRows<HubUser>("hub_users?select=user_id,display_name"),
+      serviceRows<HubVtc>("hub_vtcs?select=vtc_id,slug,name,tag,description,discord_url,website_url,is_demo,created_at&is_demo=eq.false"),
+      serviceRows<HubMembership>("hub_memberships?select=vtc_id,user_id,role,joined_at"),
+    ]),db=platformEnv().DB,profileNames=new Map(profiles.map(profile=>[profile.user_id,profile.display_name])),userIds=new Map<string,string>();
+    for(const user of authUsers){
+      const email=user.email?.trim().toLowerCase()||null;
+      const existing=email?await db.prepare(`SELECT id FROM users WHERE lower(email)=?`).bind(email).first<{id:string}>():null;
+      const localUserId=existing?.id??user.id,metadata=user.user_metadata??{};
+      const name=String(profileNames.get(user.id)??metadata.full_name??metadata.name??metadata.user_name??email?.split("@")[0]??"Fahrer").trim().slice(0,100)||"Fahrer";
+      userIds.set(user.id,localUserId);
+      await db.prepare(`INSERT INTO users (id,email,display_name) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET email=COALESCE(excluded.email,users.email),display_name=excluded.display_name,updated_at=CURRENT_TIMESTAMP`).bind(localUserId,email,name).run();
+      await db.prepare(`INSERT OR IGNORE INTO linked_accounts (user_id,provider,provider_id,username) VALUES (?,'supabase',?,?)`).bind(localUserId,user.id,name).run();
+      await db.prepare(`INSERT OR IGNORE INTO account_security (user_id) VALUES (?)`).bind(localUserId).run();
+    }
+    for(const vtc of vtcs){
+      const name=String(vtc.name??"").trim(),tag=String(vtc.tag??"").trim();if(!name||!tag)continue;
+      await db.prepare(`INSERT INTO vtcs (id,slug,name,tag,description,country,city,games,languages,timezone,discord_url,website_url,driver_count,created_at) VALUES (?,?,?,?,?,'Deutschland',NULL,'ETS2,ATS','Deutsch','Europe/Berlin',?,?,0,COALESCE(?,CURRENT_TIMESTAMP)) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,name=excluded.name,tag=excluded.tag,description=excluded.description,discord_url=excluded.discord_url,website_url=excluded.website_url`).bind(vtc.vtc_id,String(vtc.slug??vtc.vtc_id),name,tag,vtc.description??"Virtuelle Spedition auf VTC Truck Hub",vtc.discord_url??null,vtc.website_url??null,vtc.created_at??null).run();
+    }
+    for(const membership of memberships){
+      const localUserId=userIds.get(membership.user_id)??membership.user_id,mapped=importedRole(membership.role),roleId=`role-import-${membership.vtc_id}-${mapped.key}`;
+      await db.prepare(`INSERT OR IGNORE INTO roles (id,vtc_id,name,color,rank,permissions,protected) VALUES (?,?,?,'#22d3c5',?,?,?)`).bind(roleId,membership.vtc_id,mapped.name,mapped.rank,JSON.stringify(mapped.permissions),mapped.protected).run();
+      await db.prepare(`INSERT INTO memberships (id,vtc_id,user_id,role_id,status,joined_at) VALUES (?,?,?,?,'active',COALESCE(?,CURRENT_TIMESTAMP)) ON CONFLICT(vtc_id,user_id) DO UPDATE SET role_id=excluded.role_id,status='active'`).bind(`membership-import-${membership.vtc_id}-${localUserId}`,membership.vtc_id,localUserId,roleId,membership.joined_at??null).run();
+      await db.prepare(`INSERT OR IGNORE INTO personnel_records (id,vtc_id,user_id,status,language,timezone) VALUES (?,?,?,'active','Deutsch','Europe/Berlin')`).bind(`personnel-import-${membership.vtc_id}-${localUserId}`,membership.vtc_id,localUserId).run();
+    }
+    for(const id of ["vtc-ngl","vtc-ast","vtc-r66"]){
+      await db.prepare(`DELETE FROM memberships WHERE vtc_id=?`).bind(id).run();
+      await db.prepare(`DELETE FROM personnel_records WHERE vtc_id=?`).bind(id).run();
+      await db.prepare(`UPDATE discord_guilds SET vtc_id=NULL WHERE vtc_id=?`).bind(id).run();
+      await db.prepare(`DELETE FROM vtcs WHERE id=?`).bind(id).run();
+    }
+    const orphanFounders=await db.prepare(`SELECT a.entity_id AS vtcId,a.actor_id AS userId FROM audit_logs a JOIN vtcs v ON v.id=a.entity_id JOIN users u ON u.id=a.actor_id LEFT JOIN memberships m ON m.vtc_id=a.entity_id AND m.user_id=a.actor_id WHERE a.action='vtc.created' AND a.entity_type='vtc' AND a.actor_id IS NOT NULL AND m.id IS NULL`).all<{vtcId:string;userId:string}>();
+    for(const founder of orphanFounders.results){
+      const roleId=`role-import-${founder.vtcId}-owner`;
+      await db.prepare(`INSERT OR IGNORE INTO roles (id,vtc_id,name,color,rank,permissions,protected) VALUES (?,?,?,'#22d3c5',100,'["*"]',1)`).bind(roleId,founder.vtcId,"Geschäftsführer").run();
+      await db.prepare(`INSERT OR IGNORE INTO memberships (id,vtc_id,user_id,role_id,status) VALUES (?,?,?,?,'active')`).bind(`membership-recovered-${founder.vtcId}-${founder.userId}`,founder.vtcId,founder.userId,roleId).run();
+      await db.prepare(`INSERT OR IGNORE INTO personnel_records (id,vtc_id,user_id,status,language,timezone) VALUES (?,?,?,'active','Deutsch','Europe/Berlin')`).bind(`personnel-recovered-${founder.vtcId}-${founder.userId}`,founder.vtcId,founder.userId).run();
+    }
+    for(const vtc of vtcs)await db.prepare(`UPDATE vtcs SET driver_count=(SELECT COUNT(*) FROM memberships WHERE vtc_id=? AND status='active') WHERE id=?`).bind(vtc.vtc_id,vtc.vtc_id).run();
+    directorySyncedAt=Date.now();
+    return {users:authUsers.length,vtcs:vtcs.length,memberships:memberships.length};
+  })().finally(()=>{directorySyncPromise=null});
+  return directorySyncPromise;
 }
 
 export async function approveDesktopAuth(request: Request, userId: string) {

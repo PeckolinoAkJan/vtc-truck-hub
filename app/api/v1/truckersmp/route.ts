@@ -188,7 +188,7 @@ async function tmpFetch(url: string) {
     timer = setTimeout(() => c.abort(), 8000);
   try {
     const r = await fetch(url, {
-      headers: { Accept: "application/json", "User-Agent": "ConvoyHub/1.0" },
+      headers: { Accept: "application/json", "User-Agent": "VTCTruckHub/1.1" },
       signal: c.signal,
     });
     if (!r.ok) throw new Error(`TruckersMP antwortet mit HTTP ${r.status}`);

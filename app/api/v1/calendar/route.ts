@@ -62,11 +62,11 @@ export async function GET(request: Request) {
   ]);
   if (url.searchParams.get("format") === "ics") {
     const all = [...(entries.results as any[]), ...(events.results as any[])],
-      ics = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//ConvoyHub//DE\r\n${all.map((x) => `BEGIN:VEVENT\r\nUID:${x.id}@convoyhub\r\nDTSTART:${icsDate(x.starts_at)}\r\n${x.ends_at ? `DTEND:${icsDate(x.ends_at)}\r\n` : ""}SUMMARY:${esc(x.title || x.name)}\r\nDESCRIPTION:${esc(x.description || "")}\r\nEND:VEVENT`).join("\r\n")}\r\nEND:VCALENDAR`;
+      ics = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//VTC Truck Hub//DE\r\n${all.map((x) => `BEGIN:VEVENT\r\nUID:${x.id}@vtc-truck-hub\r\nDTSTART:${icsDate(x.starts_at)}\r\n${x.ends_at ? `DTEND:${icsDate(x.ends_at)}\r\n` : ""}SUMMARY:${esc(x.title || x.name)}\r\nDESCRIPTION:${esc(x.description || "")}\r\nEND:VEVENT`).join("\r\n")}\r\nEND:VCALENDAR`;
     return new Response(ics, {
       headers: {
         "Content-Type": "text/calendar; charset=utf-8",
-        "Content-Disposition": `attachment; filename="convoyhub-${vtcId}.ics"`,
+        "Content-Disposition": `attachment; filename="vtc-truck-hub-${vtcId}.ics"`,
       },
     });
   }

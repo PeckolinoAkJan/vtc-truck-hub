@@ -7,7 +7,7 @@ export default function Wiki() {
     [selected, setSelected] = useState<any>(null),
     [message, setMessage] = useState("");
   async function load() {
-    setData(await (await fetch("/api/v1/resources?vtcId=vtc-ngl")).json());
+    setData(await (await fetch("/api/v1/resources")).json());
   }
   useEffect(() => {
     load();
@@ -16,7 +16,7 @@ export default function Wiki() {
     const r = await fetch("/api/v1/resources", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vtcId: "vtc-ngl", ...body }),
+        body: JSON.stringify({  ...body }),
       }),
       j = await r.json();
     setMessage(

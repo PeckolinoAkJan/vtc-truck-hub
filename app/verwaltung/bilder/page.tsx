@@ -5,7 +5,7 @@ export default function CompanyImages() {
   const [data, setData] = useState<any>(),
     [message, setMessage] = useState("");
   useEffect(() => {
-    fetch("/api/v1/management?vtcId=vtc-ngl")
+    fetch("/api/v1/management")
       .then(async (r) => {
         if (r.status === 401 || r.status === 403) {
           location.href = "/konto";
@@ -24,9 +24,9 @@ export default function CompanyImages() {
     <main className="manage-page">
       <header>
         <a className="brand" href="/">
-          <span className="brand-mark">CH</span>
+          <span className="brand-mark">VH</span>
           <span>
-            CONVOY<span>HUB</span>
+            VTC TRUCK <span>HUB</span>
           </span>
         </a>
         <div>

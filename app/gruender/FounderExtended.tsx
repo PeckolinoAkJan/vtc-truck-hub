@@ -1,5 +1,7 @@
 "use client";
 
+import {FormEvent,useCallback,useEffect,useState} from "react";
+
 type Props = {
   mode: string;
   data: any;
@@ -11,6 +13,7 @@ export default function FounderExtended({ mode, data, busy, onAction }: Props) {
   const act = (body: object, success: string) => onAction(body, success);
 
   if (mode === "Benutzer & Speditionen") return <div className="admin-columns">
+    <MembershipManager busy={busy} />
     <section className="admin-list"><h2>Alle Benutzer</h2>{data.users.length ? data.users.map((user: any) => {
       const protectedFounder = String(user.email ?? "").toLowerCase() === String(data.founder.email).toLowerCase();
       return <article key={user.id}><div><strong>{user.displayName || "Unbenannter Benutzer"}{protectedFounder ? " · Gründerkonto" : ""}</strong><span>{user.email || "OAuth-Konto"} · {user.sessions} Sitzungen · {user.memberships} Mitgliedschaften</span></div>{protectedFounder ? <b>GESCHÜTZT</b> : <button disabled={busy} onClick={() => confirm(`Benutzer ${user.displayName || user.email} wirklich sperren und alle Sitzungen beenden?`) && act({ action: "suspendUser", id: user.id, data: { reason: "Durch Plattformgründer gesperrt" } }, "Benutzer gesperrt und Sitzungen beendet.")}>Sperren & abmelden</button>}</article>;
@@ -41,4 +44,50 @@ export default function FounderExtended({ mode, data, busy, onAction }: Props) {
   </div>;
 
   return null;
+}
+
+type MembershipData={
+  users:Array<{id:string;email:string|null;displayName:string|null}>;
+  vtcs:Array<{id:string;name:string;tag:string;slug:string}>;
+  memberships:Array<{id:string;userId:string;vtcId:string;status:string;email:string|null;displayName:string|null;vtcName:string;roleName:string|null}>;
+};
+
+function MembershipManager({busy}:{busy:boolean}){
+  const [directory,setDirectory]=useState<MembershipData|null>(null);
+  const [working,setWorking]=useState(false);
+  const [message,setMessage]=useState("");
+  const [failure,setFailure]=useState("");
+  const load=useCallback(async()=>{
+    const response=await fetch("/api/admin/memberships",{cache:"no-store"});
+    const result=await response.json();
+    if(!response.ok)throw new Error(result.error??"Mitgliedschaften konnten nicht geladen werden");
+    setDirectory(result);
+  },[]);
+  useEffect(()=>{load().catch((reason)=>setFailure(reason instanceof Error?reason.message:String(reason)));},[load]);
+  async function assign(event:FormEvent<HTMLFormElement>){
+    event.preventDefault();setWorking(true);setFailure("");setMessage("");
+    try{
+      const values=Object.fromEntries(new FormData(event.currentTarget));
+      const response=await fetch("/api/admin/memberships",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(values)});
+      const result=await response.json();
+      if(!response.ok)throw new Error(result.error??"Zuordnung fehlgeschlagen");
+      await load();setMessage(`Mitgliedschaft als ${result.role} wurde gespeichert.`);
+    }catch(reason){setFailure(reason instanceof Error?reason.message:String(reason));}
+    finally{setWorking(false);}
+  }
+  return <section className="admin-list admin-membership-manager">
+    <h2>Benutzer einer Spedition zuordnen</h2>
+    <p>Der automatische Supabase-Abgleich läuft beim Öffnen dieser Ansicht. Falls eine alte Zuordnung dort fehlt, kannst du sie hier eindeutig und ohne erfundene Daten nachtragen.</p>
+    {failure&&<p className="admin-error" role="alert">{failure}</p>}{message&&<p className="admin-success" role="status">{message}</p>}
+    {!directory?<p>Supabase-Zuordnungen werden abgeglichen …</p>:<>
+      <form className="admin-form" onSubmit={assign}>
+        <label>Registrierter Benutzer<select name="userId" required defaultValue=""><option value="" disabled>Benutzer auswählen</option>{directory.users.map(user=><option value={user.id} key={user.id}>{user.displayName||user.email||user.id} · {user.email||"OAuth-Konto"}</option>)}</select></label>
+        <label>Spedition<select name="vtcId" required defaultValue=""><option value="" disabled>Spedition auswählen</option>{directory.vtcs.map(vtc=><option value={vtc.id} key={vtc.id}>{vtc.name} ({vtc.tag})</option>)}</select></label>
+        <label>Rolle<select name="role" required defaultValue="driver"><option value="owner">Geschäftsführer</option><option value="admin">Administrator</option><option value="driver">Fahrer</option></select></label>
+        <button className="primary" disabled={busy||working}>{working?"Zuordnung wird gespeichert …":"Mitgliedschaft speichern"}</button>
+      </form>
+      <h3>Aktuelle belegte Zuordnungen ({directory.memberships.length})</h3>
+      {directory.memberships.length?directory.memberships.map(item=><article key={item.id}><div><strong>{item.displayName||item.email||item.userId}</strong><span>{item.email||"OAuth-Konto"} → {item.vtcName}</span></div><b>{item.roleName||"Ohne Rolle"}</b></article>):<p>Keine Mitgliedschaften vorhanden.</p>}
+    </>}
+  </section>;
 }

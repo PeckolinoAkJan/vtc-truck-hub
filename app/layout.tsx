@@ -5,6 +5,7 @@ import "./globals.css";
 import "./security.css";
 import "./brand-refresh.css";
 import PwaRegister from "./PwaRegister";
+import VtcModuleNav from "./components/VtcModuleNav";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -16,5 +17,5 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="de"><body className={`${geistSans.variable} ${geistMono.variable}`}><PwaRegister/>{children}</body></html>;
+  return <html lang="de"><body className={`${geistSans.variable} ${geistMono.variable}`}><PwaRegister/><VtcModuleNav/>{children}</body></html>;
 }

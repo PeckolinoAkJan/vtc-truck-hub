@@ -20,7 +20,10 @@ type User = {
 export default function Account() {
   const [user, setUser] = useState<User | null>(null),
     [mode, setMode] = useState<"login" | "register">("login"),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [clientAccess,setClientAccess]=useState<any[]>([]),
+    [clientKey,setClientKey]=useState(""),
+    [clientMessage,setClientMessage]=useState("");
   useEffect(() => {
     const authHash = new URLSearchParams(location.hash.replace(/^#/, ""));
     const accessToken = authHash.get("access_token");
@@ -43,6 +46,14 @@ export default function Account() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setUser(d.user));
   }, []);
+  useEffect(()=>{if(!user)return;fetch("/api/v1/client-access").then(r=>r.ok?r.json():null).then(d=>d&&setClientAccess(d.memberships??[])).catch(()=>{})},[user]);
+  async function createClientKey(vtcId:string){
+    setClientMessage("Persönlicher Schlüssel wird erstellt …");setClientKey("");
+    const response=await fetch("/api/v1/client-access",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({vtcId})}),data=await response.json();
+    if(!response.ok)return setClientMessage(data.error??"Schlüssel konnte nicht erstellt werden.");
+    setClientKey(data.key);setClientMessage(`${data.vtc.name}: Schlüssel jetzt in den Desktop-Client kopieren.`);
+    const fresh=await fetch("/api/v1/client-access").then(r=>r.json());setClientAccess(fresh.memberships??[]);
+  }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setMessage("Wird geprüft …");
@@ -113,6 +124,13 @@ export default function Account() {
               <a href="/konto/sicherheit">Sicherheit, Geräte & Datenschutz →</a>
               <a href="/konto/sicherheit#passwort">Passwort ändern →</a>
             </div>
+            <section className="client-connect-box">
+              <div><span>DESKTOP-CLIENT</span><h2>Telemetrie sicher verbinden</h2><p>Jeder Fahrer erhält einen eigenen Schlüssel pro Spedition. Er funktioniert ausschließlich für deine Mitgliedschaft und kann jederzeit erneuert werden.</p></div>
+              {clientAccess.length?clientAccess.map((entry:any)=><article key={entry.id}><div><b>{entry.tag} · {entry.name}</b><small>{entry.roleName||"Mitglied"} · {entry.prefix?`Aktiver Schlüssel ${entry.prefix}…`:"Noch kein Schlüssel erstellt"}</small></div><button type="button" onClick={()=>createClientKey(entry.id)}>{entry.prefix?"Schlüssel erneuern":"Schlüssel erstellen"}</button></article>):<p className="client-empty">Nach der Zuordnung zu einer Spedition erscheint hier dein persönlicher Telemetrie-Schlüssel.</p>}
+              {clientMessage&&<p className="client-key-message">{clientMessage}</p>}
+              {clientKey&&<div className="client-key-once"><strong>NUR EINMAL SICHTBAR</strong><code>{clientKey}</code><button type="button" onClick={()=>navigator.clipboard.writeText(clientKey)}>Schlüssel kopieren</button><ol><li>VTC Truck Hub Desktop-Client öffnen</li><li>Einstellungen → Verbindung</li><li>Server <b>https://vtc-truck-hub.de</b> und diesen Schlüssel eintragen</li></ol></div>}
+              <a className="client-download-account" href="/downloads">Client-Download und aktuelle Version →</a>
+            </section>
             <a className="primary" href="/dashboard">
               Zum Dashboard
             </a>

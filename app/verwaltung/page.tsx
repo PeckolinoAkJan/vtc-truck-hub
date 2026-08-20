@@ -120,13 +120,13 @@ export default function Management() {
     <main className="manage-page">
       <header>
         <a className="brand" href="/">
-          <span className="brand-mark">CH</span>
+          <span className="brand-mark">VH</span>
           <span>
-            CONVOY<span>HUB</span>
+            VTC TRUCK <span>HUB</span>
           </span>
         </a>
         <div>
-          <span className="kicker">NORDLICHT LOGISTIK</span>
+          <span className="kicker">MEINE SPEDITION</span>
           <h1>Speditionsverwaltung</h1>
         </div>
         <a href="/dashboard">Dashboard</a>
