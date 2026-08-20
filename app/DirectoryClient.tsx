@@ -29,6 +29,7 @@ type Vtc = {
 export default function DirectoryClient() {
   const [rows, setRows] = useState<Vtc[]>([]),
     [authenticated, setAuthenticated] = useState(false),
+    [isFounder, setIsFounder] = useState(false),
     [clientRelease, setClientRelease] = useState<{version:string;downloadUrl:string}|null>(null),
     [query, setQuery] = useState(""),
     [game, setGame] = useState(""),
@@ -60,10 +61,11 @@ export default function DirectoryClient() {
         })
       : Promise.resolve(false);
     Promise.all([
-      finishOAuth.then((oauthSignedIn) => oauthSignedIn || fetch("/api/auth/me").then((r) => r.ok)),
+      finishOAuth.then(() => fetch("/api/auth/me").then(async (r) => r.ok ? { signedIn: true, ...(await r.json()) } : { signedIn: false, isFounder: false })),
       fetch("/api/v1/client-download").then((r) => r.ok ? r.json() : null),
-    ]).then(([signedIn, download]) => {
-      setAuthenticated(signedIn);
+    ]).then(([account, download]) => {
+      setAuthenticated(account.signedIn);
+      setIsFounder(Boolean(account.isFounder));
       setClientRelease(download?.release ?? null);
     }).catch(() => {});
   }, []);
@@ -149,6 +151,7 @@ export default function DirectoryClient() {
               Client downloaden
             </a>
           )}
+          {isFounder && <a className="login" href="/admin">Administration</a>}
           <a className="login" href="/konto">
             {authenticated ? "Mein Konto" : "Anmelden"}
           </a>

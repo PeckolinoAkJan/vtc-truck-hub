@@ -7,13 +7,13 @@ const developmentPreviewMeta =
 const templateRoot = new URL("../", import.meta.url);
 const previewRoot = new URL("../app/_sites-preview/", import.meta.url);
 
-async function render() {
+async function render(path = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/", {
+    new Request(`http://localhost${path}`, {
       headers: { accept: "text/html" },
     }),
     {
@@ -39,6 +39,23 @@ test("server-renders the VTC Truck Hub landing page", async () => {
   assert.match(html, /EURO TRUCK SIMULATOR 2/);
   assert.match(html, /AMERICAN TRUCK SIMULATOR/);
   assert.match(html, /Speditionen entdecken/i);
+});
+
+test("admin route is present and founder-gated", async () => {
+  const response = await render("/admin");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Gründerrechte werden geprüft/);
+
+  const [adminPage, adminApi] = await Promise.all([
+    readFile(new URL("../app/gruender/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(adminPage, /Audit & Sicherheit/);
+  assert.match(adminPage, /Wirtschaft & Punkte/);
+  assert.match(adminApi, /requireFounder/);
+  assert.match(adminApi, /approvePayroll/);
+  assert.match(adminApi, /clientVersion/);
 });
 
 test.skip("legacy starter preview is no longer part of the production app", async () => {

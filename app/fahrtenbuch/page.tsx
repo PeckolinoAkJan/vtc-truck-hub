@@ -157,15 +157,13 @@ function LegacyTrips() {
                 onSubmit={async (e) => {
                   e.preventDefault();
                   const f = new FormData(e.currentTarget);
-                  if (
-                    await act({
-                      action: "comment",
-                      tripId: selected.id,
-                      comment: f.get("comment"),
-                      internal: f.get("internal") === "on",
-                    })
-                  )
-                    e.currentTarget.reset();
+                  await act({
+                    action: "comment",
+                    tripId: selected.id,
+                    comment: f.get("comment"),
+                    internal: f.get("internal") === "on",
+                  });
+                  e.currentTarget.reset();
                 }}
               >
                 <textarea
