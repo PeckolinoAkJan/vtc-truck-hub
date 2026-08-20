@@ -1,4 +1,4 @@
-# ConvoyHub Windows-Telemetrieclient
+# VTC Truck Hub Windows-Telemetrieclient
 
 Der .NET-8-Client empfängt JSON-Pakete eines SCS-Telemetrie-Plugins ausschließlich über `127.0.0.1:35055`, überträgt sie authentifiziert an `/api/v1/telemetry` und puffert fehlgeschlagene Pakete lokal für die automatische Nachsynchronisierung.
 

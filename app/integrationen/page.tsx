@@ -1,6 +1,345 @@
-"use client";import {useEffect,useState} from "react";
-export default function Integrations(){const[tmp,setTmp]=useState<any>(null),[api,setApi]=useState<any>(null),[tab,setTab]=useState("TruckersMP"),[message,setMessage]=useState(""),[oneTime,setOneTime]=useState("");async function load(){const[a,b]=await Promise.all([fetch("/api/v1/truckersmp?vtcId=vtc-ngl"),fetch("/api/v1/integrations?vtcId=vtc-ngl")]);if(a.status===401||b.status===401){location.href="/konto";return}setTmp(await a.json());setApi(b.ok?await b.json():null)}useEffect(()=>{load()},[]);async function act(url:string,body:object){const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({vtcId:"vtc-ngl",...body})}),j=await r.json();setMessage(r.ok?"Integration wurde aktualisiert.":j.error);if(j.key||j.secret)setOneTime(j.key||j.secret);if(r.ok)await load()}if(!tmp)return <main className="integration-loading">Integrationen werden geladen …</main>;return <main className="integration-page"><header><div><span>NGL · INTEGRATIONEN</span><h1>TruckersMP, API & Webhooks</h1></div><a href="/dashboard">Dashboard</a></header><nav>{["TruckersMP","API-Schlüssel","Webhooks","API-Dokumentation"].map(x=><button className={tab===x?"active":""} onClick={()=>setTab(x)} key={x}>{x}</button>)}</nav>{message&&<p className="integration-message">{message}</p>}{oneTime&&<aside className="secret-once"><b>NUR EINMAL SICHTBAR – jetzt sicher kopieren</b><code>{oneTime}</code><button onClick={()=>setOneTime("")}>Ausblenden</button></aside>}
-{tab==="TruckersMP"&&<section className="integration-two"><div className="integration-list"><h2>Verknüpfungen und Synchronisierung</h2>{tmp.links.map((l:any)=><article key={l.id}><div><b>{l.type==="player"?"Spieler":"VTC"} #{l.truckersmp_id}</b><span>{l.verified?"Verifiziert":"Nicht geprüft"} · {l.last_synced_at?new Date(l.last_synced_at).toLocaleString("de-DE"):"Noch nie synchronisiert"}</span><small>{l.sync_error}</small></div><button onClick={()=>act("/api/v1/truckersmp",{action:"sync",linkId:l.id})}>Jetzt synchronisieren</button><details><summary>Remote-Daten</summary><pre>{JSON.stringify(l.remote_data,null,2)}</pre></details></article>)}<h2>Letzte Synchronisierungen</h2>{tmp.logs.map((l:any)=><p key={l.id}><b>{l.status}</b> {l.message} · {new Date(l.created_at).toLocaleString("de-DE")}</p>)}</div><aside><form className="integration-form" onSubmit={e=>{e.preventDefault();act("/api/v1/truckersmp",{action:"link",type:"player",truckersmpId:new FormData(e.currentTarget).get("id")})}}><h2>Spielerkonto verknüpfen</h2><input name="id" placeholder="TruckersMP-Spieler-ID" required/><button>Verknüpfen & prüfen</button></form>{tmp.canManage&&<form className="integration-form" onSubmit={e=>{e.preventDefault();act("/api/v1/truckersmp",{action:"link",type:"vtc",truckersmpId:new FormData(e.currentTarget).get("id")})}}><h2>VTC verknüpfen</h2><input name="id" placeholder="TruckersMP-VTC-ID" required/><button>VTC synchronisieren</button></form>}<section className="server-status"><h2>TruckersMP-Server</h2>{tmp.serverError&&<p>{tmp.serverError}</p>}{(tmp.servers||[]).map((s:any)=><article key={s.id||s.name}><b>{s.name}</b><span>{s.online?"Online":"Offline"} · {s.players}/{s.maxplayers}</span></article>)}</section></aside></section>}
-{tab==="API-Schlüssel"&&api&&<section className="integration-two"><div className="integration-list"><h2>API-Schlüssel</h2>{api.keys.map((k:any)=><article key={k.id}><div><b>{k.name}</b><span><code>{k.prefix}…</code> · {k.scopes.join(", ")} · {k.rateLimit}/min</span><small>{k.revokedAt?"Widerrufen":k.lastUsedAt?`Zuletzt ${new Date(k.lastUsedAt).toLocaleString("de-DE")}`:"Noch nicht verwendet"}</small></div>{!k.revokedAt&&<button onClick={()=>act("/api/v1/integrations",{action:"revokeKey",id:k.id})}>Widerrufen</button>}</article>)}</div><form className="integration-form" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);act("/api/v1/integrations",{action:"createKey",data:{name:f.get("name"),rateLimit:f.get("rateLimit"),expiresAt:f.get("expiresAt"),scopes:f.getAll("scopes")}})}}><h2>Neuer Schlüssel</h2><input name="name" placeholder="Bezeichnung" required/><input name="rateLimit" type="number" defaultValue="120"/><input name="expiresAt" type="date"/><fieldset>{api.allowedScopes.map((s:string)=><label key={s}><input type="checkbox" name="scopes" value={s}/>{s}</label>)}</fieldset><button>Schlüssel erzeugen</button></form></section>}
-{tab==="Webhooks"&&api&&<section className="integration-two"><div className="integration-list"><h2>Webhooks</h2>{api.webhooks.map((w:any)=><article key={w.id}><div><b>{w.url}</b><span>{w.events.join(", ")}</span><small>{w.active?"Aktiv":"Deaktiviert"}</small></div>{w.active&&<><button onClick={()=>act("/api/v1/integrations",{action:"testWebhook",id:w.id})}>Test senden</button><button onClick={()=>act("/api/v1/integrations",{action:"disableWebhook",id:w.id})}>Deaktivieren</button></>}</article>)}<h2>Zustellungsverlauf</h2>{api.deliveries.map((d:any)=><p key={d.id}><b>{d.event}</b> · {d.status} · Versuch {d.attempts} {d.last_error&&`· ${d.last_error}`} {d.status!=="delivered"&&<button onClick={()=>act("/api/v1/integrations",{action:"retryDelivery",id:d.id})}>Wiederholen</button>}</p>)}</div><form className="integration-form" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);act("/api/v1/integrations",{action:"webhook",data:{url:f.get("url"),events:f.getAll("events")}})}}><h2>Webhook anlegen</h2><input name="url" type="url" placeholder="https://…" required/><fieldset>{["trip.started","trip.completed","driver.joined","driver.left","application.received","application.accepted","event.created","event.starting","role.changed","warning.created","payroll.completed"].map(x=><label key={x}><input name="events" type="checkbox" value={x}/>{x}</label>)}</fieldset><button>Webhook speichern</button></form></section>}
-{tab==="API-Dokumentation"&&api&&<section className="api-docs"><h2>ConvoyHub REST API v1</h2><p>Basis: <code>{api.docs.base}</code> · Authentifizierung: <code>{api.docs.authentication}</code></p><h3>Ressourcen</h3><div>{api.docs.resources.map((x:string)=><code key={x}>GET /api/v1/{x}</code>)}</div><h3>Technische Konventionen</h3><ul><li>JSON-Anfragen und JSON-Antworten</li><li>Scopes je API-Schlüssel und sofortiger Widerruf</li><li>Ratenlimit pro Schlüssel</li><li>Pagination, Filter und Sortierung über Query-Parameter</li><li>Webhook-Signatur in X-ConvoyHub-Signature</li><li>Eindeutige Zustellungs- und Request-IDs</li></ul></section>}</main>}
+"use client";
+import { useEffect, useState } from "react";
+export default function Integrations() {
+  const [tmp, setTmp] = useState<any>(null),
+    [api, setApi] = useState<any>(null),
+    [tab, setTab] = useState("TruckersMP"),
+    [message, setMessage] = useState(""),
+    [oneTime, setOneTime] = useState("");
+  async function load() {
+    const b=await fetch("/api/v1/integrations");
+    const apiData=b.ok?await b.json():null;
+    const a=apiData?.vtc?.id?await fetch(`/api/v1/truckersmp?vtcId=${encodeURIComponent(apiData.vtc.id)}`):b;
+    if (a.status === 401 || b.status === 401) {
+      location.href = "/konto";
+      return;
+    }
+    setTmp(a.ok?await a.json():{links:[],cache:[],errors:[]});
+    setApi(apiData);
+  }
+  useEffect(() => {
+    load();
+  }, []);
+  async function act(url: string, body: object) {
+    const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vtcId: api?.vtc?.id, ...body }),
+      }),
+      j = await r.json();
+    setMessage(r.ok ? "Integration wurde aktualisiert." : j.error);
+    if (j.key || j.secret) setOneTime(j.key || j.secret);
+    if (r.ok) await load();
+  }
+  if (!tmp)
+    return (
+      <main className="integration-loading">
+        Integrationen werden geladen …
+      </main>
+    );
+  return (
+    <main className="integration-page">
+      <header>
+        <div>
+          <span>{api?.vtc?.tag} · INTEGRATIONEN</span>
+          <h1>{api?.vtc?.name} · TruckersMP, API & Webhooks</h1>
+        </div>
+        <a href="/dashboard">Dashboard</a>
+      </header>
+      <nav>
+        {["TruckersMP", "API-Schlüssel", "Webhooks", "API-Dokumentation"].map(
+          (x) => (
+            <button
+              className={tab === x ? "active" : ""}
+              onClick={() => setTab(x)}
+              key={x}
+            >
+              {x}
+            </button>
+          ),
+        )}
+      </nav>
+      {message && <p className="integration-message">{message}</p>}
+      {oneTime && (
+        <aside className="secret-once">
+          <b>NUR EINMAL SICHTBAR – jetzt sicher kopieren</b>
+          <code>{oneTime}</code>
+          <button onClick={() => setOneTime("")}>Ausblenden</button>
+        </aside>
+      )}
+      {tab === "TruckersMP" && (
+        <section className="integration-two">
+          <div className="integration-list">
+            <h2>Verknüpfungen und Synchronisierung</h2>
+            {tmp.links.map((l: any) => (
+              <article key={l.id}>
+                <div>
+                  <b>
+                    {l.type === "player" ? "Spieler" : "VTC"} #{l.truckersmp_id}
+                  </b>
+                  <span>
+                    {l.verified ? "Verifiziert" : "Nicht geprüft"} ·{" "}
+                    {l.last_synced_at
+                      ? new Date(l.last_synced_at).toLocaleString("de-DE")
+                      : "Noch nie synchronisiert"}
+                  </span>
+                  <small>{l.sync_error}</small>
+                </div>
+                <button
+                  onClick={() =>
+                    act("/api/v1/truckersmp", { action: "sync", linkId: l.id })
+                  }
+                >
+                  Jetzt synchronisieren
+                </button>
+                <details>
+                  <summary>Remote-Daten</summary>
+                  <pre>{JSON.stringify(l.remote_data, null, 2)}</pre>
+                </details>
+              </article>
+            ))}
+            <h2>Letzte Synchronisierungen</h2>
+            {tmp.logs.map((l: any) => (
+              <p key={l.id}>
+                <b>{l.status}</b> {l.message} ·{" "}
+                {new Date(l.created_at).toLocaleString("de-DE")}
+              </p>
+            ))}
+          </div>
+          <aside>
+            <form
+              className="integration-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                act("/api/v1/truckersmp", {
+                  action: "link",
+                  type: "player",
+                  truckersmpId: new FormData(e.currentTarget).get("id"),
+                });
+              }}
+            >
+              <h2>Spielerkonto verknüpfen</h2>
+              <input name="id" placeholder="TruckersMP-Spieler-ID" required />
+              <button>Verknüpfen & prüfen</button>
+            </form>
+            {tmp.canManage && (
+              <form
+                className="integration-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  act("/api/v1/truckersmp", {
+                    action: "link",
+                    type: "vtc",
+                    truckersmpId: new FormData(e.currentTarget).get("id"),
+                  });
+                }}
+              >
+                <h2>VTC verknüpfen</h2>
+                <input name="id" placeholder="TruckersMP-VTC-ID" required />
+                <button>VTC synchronisieren</button>
+              </form>
+            )}
+            <section className="server-status">
+              <h2>TruckersMP-Server</h2>
+              {tmp.serverError && <p>{tmp.serverError}</p>}
+              {(tmp.servers || []).map((s: any) => (
+                <article key={s.id || s.name}>
+                  <b>{s.name}</b>
+                  <span>
+                    {s.online ? "Online" : "Offline"} · {s.players}/
+                    {s.maxplayers}
+                  </span>
+                </article>
+              ))}
+            </section>
+          </aside>
+        </section>
+      )}
+      {tab === "API-Schlüssel" && api && (
+        <section className="integration-two">
+          <div className="integration-list">
+            <h2>API-Schlüssel</h2>
+            {api.keys.map((k: any) => (
+              <article key={k.id}>
+                <div>
+                  <b>{k.name}</b>
+                  <span>
+                    <code>{k.prefix}…</code> · {k.scopes.join(", ")} ·{" "}
+                    {k.rateLimit}/min
+                  </span>
+                  <small>
+                    {k.revokedAt
+                      ? "Widerrufen"
+                      : k.lastUsedAt
+                        ? `Zuletzt ${new Date(k.lastUsedAt).toLocaleString("de-DE")}`
+                        : "Noch nicht verwendet"}
+                  </small>
+                </div>
+                {!k.revokedAt && (
+                  <button
+                    onClick={() =>
+                      act("/api/v1/integrations", {
+                        action: "revokeKey",
+                        id: k.id,
+                      })
+                    }
+                  >
+                    Widerrufen
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+          <form
+            className="integration-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              act("/api/v1/integrations", {
+                action: "createKey",
+                data: {
+                  name: f.get("name"),
+                  rateLimit: f.get("rateLimit"),
+                  expiresAt: f.get("expiresAt"),
+                  scopes: f.getAll("scopes"),
+                },
+              });
+            }}
+          >
+            <h2>Neuer Schlüssel</h2>
+            <input name="name" placeholder="Bezeichnung" required />
+            <input name="rateLimit" type="number" defaultValue="120" />
+            <input name="expiresAt" type="date" />
+            <fieldset>
+              {api.allowedScopes.map((s: string) => (
+                <label key={s}>
+                  <input type="checkbox" name="scopes" value={s} />
+                  {s}
+                </label>
+              ))}
+            </fieldset>
+            <button>Schlüssel erzeugen</button>
+          </form>
+        </section>
+      )}
+      {tab === "Webhooks" && api && (
+        <section className="integration-two">
+          <div className="integration-list">
+            <h2>Webhooks</h2>
+            {api.webhooks.map((w: any) => (
+              <article key={w.id}>
+                <div>
+                  <b>{w.url}</b>
+                  <span>{w.events.join(", ")}</span>
+                  <small>{w.active ? "Aktiv" : "Deaktiviert"}</small>
+                </div>
+                {w.active && (
+                  <>
+                    <button
+                      onClick={() =>
+                        act("/api/v1/integrations", {
+                          action: "testWebhook",
+                          id: w.id,
+                        })
+                      }
+                    >
+                      Test senden
+                    </button>
+                    <button
+                      onClick={() =>
+                        act("/api/v1/integrations", {
+                          action: "disableWebhook",
+                          id: w.id,
+                        })
+                      }
+                    >
+                      Deaktivieren
+                    </button>
+                  </>
+                )}
+              </article>
+            ))}
+            <h2>Zustellungsverlauf</h2>
+            {api.deliveries.map((d: any) => (
+              <p key={d.id}>
+                <b>{d.event}</b> · {d.status} · Versuch {d.attempts}{" "}
+                {d.last_error && `· ${d.last_error}`}{" "}
+                {d.status !== "delivered" && (
+                  <button
+                    onClick={() =>
+                      act("/api/v1/integrations", {
+                        action: "retryDelivery",
+                        id: d.id,
+                      })
+                    }
+                  >
+                    Wiederholen
+                  </button>
+                )}
+              </p>
+            ))}
+          </div>
+          <form
+            className="integration-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              act("/api/v1/integrations", {
+                action: "webhook",
+                data: { url: f.get("url"), events: f.getAll("events") },
+              });
+            }}
+          >
+            <h2>Webhook anlegen</h2>
+            <input name="url" type="url" placeholder="https://…" required />
+            <fieldset>
+              {[
+                "trip.started",
+                "trip.completed",
+                "driver.joined",
+                "driver.left",
+                "application.received",
+                "application.accepted",
+                "event.created",
+                "event.starting",
+                "role.changed",
+                "warning.created",
+                "payroll.completed",
+              ].map((x) => (
+                <label key={x}>
+                  <input name="events" type="checkbox" value={x} />
+                  {x}
+                </label>
+              ))}
+            </fieldset>
+            <button>Webhook speichern</button>
+          </form>
+        </section>
+      )}
+      {tab === "API-Dokumentation" && api && (
+        <section className="api-docs">
+          <h2>VTC Truck Hub REST API v1</h2>
+          <p>
+            Basis: <code>{api.docs.base}</code> · Authentifizierung:{" "}
+            <code>{api.docs.authentication}</code>
+          </p>
+          <h3>Ressourcen</h3>
+          <div>
+            {api.docs.resources.map((x: string) => (
+              <code key={x}>GET /api/v1/{x}</code>
+            ))}
+          </div>
+          <h3>Technische Konventionen</h3>
+          <ul>
+            <li>JSON-Anfragen und JSON-Antworten</li>
+            <li>Scopes je API-Schlüssel und sofortiger Widerruf</li>
+            <li>Ratenlimit pro Schlüssel</li>
+            <li>Pagination, Filter und Sortierung über Query-Parameter</li>
+            <li>Webhook-Signatur in X-VTC-Truck-Hub-Signature</li>
+            <li>Eindeutige Zustellungs- und Request-IDs</li>
+          </ul>
+        </section>
+      )}
+    </main>
+  );
+}

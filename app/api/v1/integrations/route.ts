@@ -1,4 +1,296 @@
-import {apiError,ensureDatabase,platformEnv,randomId,requireVtcPermission} from "@/lib/platform";type Body={action?:string;vtcId?:string;id?:string;data?:Record<string,unknown>};const clean=(v:unknown,n=2000)=>String(v??"").trim().slice(0,n),allowedScopes=["users:read","vtcs:read","drivers:read","drivers:write","applications:read","applications:write","trips:read","trips:write","telemetry:write","live:read","vehicles:read","vehicles:write","payroll:read","events:read","events:write","gallery:read","notifications:read","discord:write","partnerships:read","webhooks:write"];
-export async function GET(request:Request){await ensureDatabase();const url=new URL(request.url),vtcId=url.searchParams.get("vtcId")??"vtc-ngl",actor=await requireVtcPermission(request,vtcId,"manage_webhooks")||await requireVtcPermission(request,vtcId,"manage_settings");if(!actor)return apiError("Integrationsrecht erforderlich",403);const db=platformEnv().DB,[keys,hooks,deliveries,requests]=await Promise.all([db.prepare(`SELECT id,name,prefix,scopes,rate_limit AS rateLimit,last_used_at AS lastUsedAt,expires_at AS expiresAt,revoked_at AS revokedAt,created_at AS createdAt FROM api_keys WHERE vtc_id=? ORDER BY revoked_at IS NULL DESC,created_at DESC`).bind(vtcId).all(),db.prepare(`SELECT id,url,events,active,created_at AS createdAt FROM webhooks WHERE vtc_id=? ORDER BY active DESC,created_at DESC`).bind(vtcId).all(),db.prepare(`SELECT d.* FROM webhook_deliveries d JOIN webhooks w ON w.id=d.webhook_id WHERE w.vtc_id=? ORDER BY d.created_at DESC LIMIT 200`).bind(vtcId).all(),db.prepare(`SELECT r.* FROM api_requests r JOIN api_keys k ON k.id=r.api_key_id WHERE k.vtc_id=? ORDER BY r.created_at DESC LIMIT 200`).bind(vtcId).all()]);return Response.json({allowedScopes,keys:(keys.results as any[]).map(k=>({...k,scopes:parse(k.scopes,[])})),webhooks:(hooks.results as any[]).map(w=>({...w,events:parse(w.events,[])})),deliveries:deliveries.results,requests:requests.results,docs:{base:"/api/v1",pagination:"?page=1&limit=50",authentication:"Authorization: Bearer ch_live_…",resources:["vtcs","management","applications","trips","telemetry","live","fleet","finance","statistics","events","calendar","community","notifications","truckersmp"]}})}
-export async function POST(request:Request){await ensureDatabase();const b=await request.json() as Body,vtcId=b.vtcId??"vtc-ngl",actor=await requireVtcPermission(request,vtcId,"manage_webhooks")||await requireVtcPermission(request,vtcId,"manage_settings");if(!actor)return apiError("Integrationsrecht erforderlich",403);const db=platformEnv().DB,d=b.data??{};if(b.action==="createKey"){const raw=`ch_live_${token(12)}.${token(40)}`,prefix=raw.slice(0,20),hash=await sha256(raw),scopes=(Array.isArray(d.scopes)?d.scopes:[]).map(String).filter(x=>allowedScopes.includes(x)),id=randomId();await db.prepare(`INSERT INTO api_keys (id,vtc_id,user_id,name,prefix,secret_hash,scopes,rate_limit,expires_at) VALUES (?,?,?,?,?,?,?,?,?)`).bind(id,vtcId,actor.id,clean(d.name,120)||"API-Schlüssel",prefix,hash,JSON.stringify(scopes),Math.max(10,Math.min(10000,Number(d.rateLimit)||120)),clean(d.expiresAt,30)||null).run();return Response.json({saved:true,id,key:raw,notice:"Dieser Schlüssel wird nur einmal vollständig angezeigt."})}if(b.action==="revokeKey"&&b.id){await db.prepare(`UPDATE api_keys SET revoked_at=CURRENT_TIMESTAMP WHERE id=? AND vtc_id=? AND revoked_at IS NULL`).bind(b.id,vtcId).run();return Response.json({saved:true})}if(b.action==="webhook"){const id=b.id||randomId(),url=clean(d.url,1000);if(!/^https?:\/\//i.test(url))return apiError("Gültige HTTP(S)-Adresse erforderlich");const events=Array.isArray(d.events)?d.events:[],secret=await sha256(token(48)),hash=secret;await db.prepare(`INSERT INTO webhooks (id,vtc_id,url,events,secret_hash,active) VALUES (?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET url=excluded.url,events=excluded.events,active=1`).bind(id,vtcId,url,JSON.stringify(events),hash).run();return Response.json({saved:true,id,secret:b.id?undefined:secret,notice:b.id?undefined:"Webhook-Geheimnis wird nur einmal angezeigt."})}if(b.action==="disableWebhook"&&b.id){await db.prepare(`UPDATE webhooks SET active=0 WHERE id=? AND vtc_id=?`).bind(b.id,vtcId).run();return Response.json({saved:true})}if((b.action==="testWebhook"||b.action==="retryDelivery")&&b.id){let hook:any,payload:any,event="test";if(b.action==="retryDelivery"){const delivery=await db.prepare(`SELECT d.*,w.id hookId,w.url,w.secret_hash FROM webhook_deliveries d JOIN webhooks w ON w.id=d.webhook_id WHERE d.id=? AND w.vtc_id=?`).bind(b.id,vtcId).first<any>();if(!delivery)return apiError("Zustellung nicht gefunden",404);hook={id:delivery.hookId,url:delivery.url,secret_hash:delivery.secret_hash};payload=parse(delivery.payload,{});event=delivery.event}else{hook=await db.prepare(`SELECT * FROM webhooks WHERE id=? AND vtc_id=? AND active=1`).bind(b.id,vtcId).first<any>();if(!hook)return apiError("Webhook nicht gefunden",404);payload={id:randomId(),event:"test",createdAt:new Date().toISOString(),vtcId};}const deliveryId=b.action==="retryDelivery"?b.id:randomId();if(b.action!=="retryDelivery")await db.prepare(`INSERT INTO webhook_deliveries (id,webhook_id,event,payload,status,next_attempt_at) VALUES (?,?,?,?,'pending',CURRENT_TIMESTAMP)`).bind(deliveryId,hook.id,event,JSON.stringify(payload)).run();try{const body=JSON.stringify(payload),r=await fetch(hook.url,{method:"POST",headers:{"Content-Type":"application/json","X-ConvoyHub-Event":event,"X-ConvoyHub-Delivery":deliveryId,"X-ConvoyHub-Signature":await hmac(hook.secret_hash,body)},body});if(!r.ok)throw new Error(`HTTP ${r.status}`);await db.prepare(`UPDATE webhook_deliveries SET status='delivered',attempts=attempts+1,response_status=?,delivered_at=CURRENT_TIMESTAMP,last_error=NULL WHERE id=?`).bind(r.status,deliveryId).run();return Response.json({saved:true,delivered:true,status:r.status})}catch(e){const msg=e instanceof Error?e.message:"Zustellung fehlgeschlagen";await db.prepare(`UPDATE webhook_deliveries SET status=CASE WHEN attempts>=4 THEN 'disabled' ELSE 'retry' END,attempts=attempts+1,last_error=?,next_attempt_at=datetime('now','+'||(attempts+1)*5||' minutes') WHERE id=?`).bind(msg,deliveryId).run();return apiError(msg,502)}}return apiError("Ungültige Integrationsaktion")}
-const parse=(v:unknown,f:any)=>{try{return JSON.parse(String(v))}catch{return f}},token=(n:number)=>Array.from(crypto.getRandomValues(new Uint8Array(n)),b=>b.toString(16).padStart(2,"0")).join("").slice(0,n),sha256=async(v:string)=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(v))),b=>b.toString(16).padStart(2,"0")).join(""),hmac=async(key:string,body:string)=>{const k=await crypto.subtle.importKey("raw",new TextEncoder().encode(key),{name:"HMAC",hash:"SHA-256"},false,["sign"]);return `sha256=${Array.from(new Uint8Array(await crypto.subtle.sign("HMAC",k,new TextEncoder().encode(body))),b=>b.toString(16).padStart(2,"0")).join("")}`};
+import {
+  apiError,
+  ensureDatabase,
+  getSessionUser,
+  platformEnv,
+  randomId,
+  requireVtcPermission,
+} from "@/lib/platform";
+type Body = {
+  action?: string;
+  vtcId?: string;
+  id?: string;
+  data?: Record<string, unknown>;
+};
+const clean = (v: unknown, n = 2000) =>
+    String(v ?? "")
+      .trim()
+      .slice(0, n),
+  allowedScopes = [
+    "users:read",
+    "vtcs:read",
+    "drivers:read",
+    "drivers:write",
+    "applications:read",
+    "applications:write",
+    "trips:read",
+    "trips:write",
+    "telemetry:write",
+    "live:read",
+    "vehicles:read",
+    "vehicles:write",
+    "payroll:read",
+    "events:read",
+    "events:write",
+    "gallery:read",
+    "notifications:read",
+    "discord:write",
+    "partnerships:read",
+    "webhooks:write",
+  ];
+async function resolveVtc(request:Request,requested?:string|null){const user=await getSessionUser(request);if(!user)return null;const db=platformEnv().DB;if(requested&&requested!=="vtc-ngl"){const v=await db.prepare(`SELECT v.id,v.name,v.tag FROM memberships m JOIN vtcs v ON v.id=m.vtc_id LEFT JOIN roles r ON r.id=m.role_id WHERE m.user_id=? AND m.vtc_id=? AND m.status='active' AND (r.permissions LIKE '%\"manage_webhooks\"%' OR r.permissions LIKE '%\"manage_settings\"%' OR r.permissions LIKE '%\"*\"%')`).bind(user.id,requested).first<any>();if(v)return v}return await db.prepare(`SELECT v.id,v.name,v.tag FROM memberships m JOIN vtcs v ON v.id=m.vtc_id LEFT JOIN roles r ON r.id=m.role_id WHERE m.user_id=? AND m.status='active' AND (r.permissions LIKE '%\"manage_webhooks\"%' OR r.permissions LIKE '%\"manage_settings\"%' OR r.permissions LIKE '%\"*\"%') ORDER BY r.rank DESC,v.name LIMIT 1`).bind(user.id).first<any>()}
+export async function GET(request: Request) {
+  await ensureDatabase();
+  const url = new URL(request.url),
+    vtc=await resolveVtc(request,url.searchParams.get("vtcId"));
+  if(!vtc)return apiError("Keine verwaltbare Spedition gefunden",403);
+  const vtcId = vtc.id,
+    actor =
+      (await requireVtcPermission(request, vtcId, "manage_webhooks")) ||
+      (await requireVtcPermission(request, vtcId, "manage_settings"));
+  if (!actor) return apiError("Integrationsrecht erforderlich", 403);
+  const db = platformEnv().DB,
+    [keys, hooks, deliveries, requests] = await Promise.all([
+      db
+        .prepare(
+          `SELECT id,name,prefix,scopes,rate_limit AS rateLimit,last_used_at AS lastUsedAt,expires_at AS expiresAt,revoked_at AS revokedAt,created_at AS createdAt FROM api_keys WHERE vtc_id=? ORDER BY revoked_at IS NULL DESC,created_at DESC`,
+        )
+        .bind(vtcId)
+        .all(),
+      db
+        .prepare(
+          `SELECT id,url,events,active,created_at AS createdAt FROM webhooks WHERE vtc_id=? ORDER BY active DESC,created_at DESC`,
+        )
+        .bind(vtcId)
+        .all(),
+      db
+        .prepare(
+          `SELECT d.* FROM webhook_deliveries d JOIN webhooks w ON w.id=d.webhook_id WHERE w.vtc_id=? ORDER BY d.created_at DESC LIMIT 200`,
+        )
+        .bind(vtcId)
+        .all(),
+      db
+        .prepare(
+          `SELECT r.* FROM api_requests r JOIN api_keys k ON k.id=r.api_key_id WHERE k.vtc_id=? ORDER BY r.created_at DESC LIMIT 200`,
+        )
+        .bind(vtcId)
+        .all(),
+    ]);
+  return Response.json({
+    vtc,
+    allowedScopes,
+    keys: (keys.results as any[]).map((k) => ({
+      ...k,
+      scopes: parse(k.scopes, []),
+    })),
+    webhooks: (hooks.results as any[]).map((w) => ({
+      ...w,
+      events: parse(w.events, []),
+    })),
+    deliveries: deliveries.results,
+    requests: requests.results,
+    docs: {
+      base: "/api/v1",
+      pagination: "?page=1&limit=50",
+      authentication: "Authorization: Bearer vth_live_…",
+      resources: [
+        "vtcs",
+        "management",
+        "applications",
+        "trips",
+        "telemetry",
+        "live",
+        "fleet",
+        "finance",
+        "statistics",
+        "events",
+        "calendar",
+        "community",
+        "notifications",
+        "truckersmp",
+      ],
+    },
+  });
+}
+export async function POST(request: Request) {
+  await ensureDatabase();
+  const b = (await request.json()) as Body,vtc=await resolveVtc(request,b.vtcId);
+  if(!vtc)return apiError("Keine verwaltbare Spedition gefunden",403);
+  const vtcId = vtc.id,
+    actor =
+      (await requireVtcPermission(request, vtcId, "manage_webhooks")) ||
+      (await requireVtcPermission(request, vtcId, "manage_settings"));
+  if (!actor) return apiError("Integrationsrecht erforderlich", 403);
+  const db = platformEnv().DB,
+    d = b.data ?? {};
+  if (b.action === "createKey") {
+    const raw = `vth_live_${token(12)}.${token(40)}`,
+      prefix = raw.slice(0, 20),
+      hash = await sha256(raw),
+      scopes = (Array.isArray(d.scopes) ? d.scopes : [])
+        .map(String)
+        .filter((x) => allowedScopes.includes(x)),
+      id = randomId();
+    await db
+      .prepare(
+        `INSERT INTO api_keys (id,vtc_id,user_id,name,prefix,secret_hash,scopes,rate_limit,expires_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+      )
+      .bind(
+        id,
+        vtcId,
+        actor.id,
+        clean(d.name, 120) || "API-Schlüssel",
+        prefix,
+        hash,
+        JSON.stringify(scopes),
+        Math.max(10, Math.min(10000, Number(d.rateLimit) || 120)),
+        clean(d.expiresAt, 30) || null,
+      )
+      .run();
+    return Response.json({
+      saved: true,
+      id,
+      key: raw,
+      notice: "Dieser Schlüssel wird nur einmal vollständig angezeigt.",
+    });
+  }
+  if (b.action === "revokeKey" && b.id) {
+    await db
+      .prepare(
+        `UPDATE api_keys SET revoked_at=CURRENT_TIMESTAMP WHERE id=? AND vtc_id=? AND revoked_at IS NULL`,
+      )
+      .bind(b.id, vtcId)
+      .run();
+    return Response.json({ saved: true });
+  }
+  if (b.action === "webhook") {
+    const id = b.id || randomId(),
+      url = clean(d.url, 1000);
+    if (!/^https?:\/\//i.test(url))
+      return apiError("Gültige HTTP(S)-Adresse erforderlich");
+    const events = Array.isArray(d.events) ? d.events : [],
+      secret = await sha256(token(48)),
+      hash = secret;
+    await db
+      .prepare(
+        `INSERT INTO webhooks (id,vtc_id,url,events,secret_hash,active) VALUES (?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET url=excluded.url,events=excluded.events,active=1`,
+      )
+      .bind(id, vtcId, url, JSON.stringify(events), hash)
+      .run();
+    return Response.json({
+      saved: true,
+      id,
+      secret: b.id ? undefined : secret,
+      notice: b.id ? undefined : "Webhook-Geheimnis wird nur einmal angezeigt.",
+    });
+  }
+  if (b.action === "disableWebhook" && b.id) {
+    await db
+      .prepare(`UPDATE webhooks SET active=0 WHERE id=? AND vtc_id=?`)
+      .bind(b.id, vtcId)
+      .run();
+    return Response.json({ saved: true });
+  }
+  if ((b.action === "testWebhook" || b.action === "retryDelivery") && b.id) {
+    let hook: any,
+      payload: any,
+      event = "test";
+    if (b.action === "retryDelivery") {
+      const delivery = await db
+        .prepare(
+          `SELECT d.*,w.id hookId,w.url,w.secret_hash FROM webhook_deliveries d JOIN webhooks w ON w.id=d.webhook_id WHERE d.id=? AND w.vtc_id=?`,
+        )
+        .bind(b.id, vtcId)
+        .first<any>();
+      if (!delivery) return apiError("Zustellung nicht gefunden", 404);
+      hook = {
+        id: delivery.hookId,
+        url: delivery.url,
+        secret_hash: delivery.secret_hash,
+      };
+      payload = parse(delivery.payload, {});
+      event = delivery.event;
+    } else {
+      hook = await db
+        .prepare(`SELECT * FROM webhooks WHERE id=? AND vtc_id=? AND active=1`)
+        .bind(b.id, vtcId)
+        .first<any>();
+      if (!hook) return apiError("Webhook nicht gefunden", 404);
+      payload = {
+        id: randomId(),
+        event: "test",
+        createdAt: new Date().toISOString(),
+        vtcId,
+      };
+    }
+    const deliveryId = b.action === "retryDelivery" ? b.id : randomId();
+    if (b.action !== "retryDelivery")
+      await db
+        .prepare(
+          `INSERT INTO webhook_deliveries (id,webhook_id,event,payload,status,next_attempt_at) VALUES (?,?,?,?,'pending',CURRENT_TIMESTAMP)`,
+        )
+        .bind(deliveryId, hook.id, event, JSON.stringify(payload))
+        .run();
+    try {
+      const body = JSON.stringify(payload),
+        r = await fetch(hook.url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-ConvoyHub-Event": event,
+            "X-ConvoyHub-Delivery": deliveryId,
+            "X-ConvoyHub-Signature": await hmac(hook.secret_hash, body),
+          },
+          body,
+        });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      await db
+        .prepare(
+          `UPDATE webhook_deliveries SET status='delivered',attempts=attempts+1,response_status=?,delivered_at=CURRENT_TIMESTAMP,last_error=NULL WHERE id=?`,
+        )
+        .bind(r.status, deliveryId)
+        .run();
+      return Response.json({ saved: true, delivered: true, status: r.status });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Zustellung fehlgeschlagen";
+      await db
+        .prepare(
+          `UPDATE webhook_deliveries SET status=CASE WHEN attempts>=4 THEN 'disabled' ELSE 'retry' END,attempts=attempts+1,last_error=?,next_attempt_at=datetime('now','+'||(attempts+1)*5||' minutes') WHERE id=?`,
+        )
+        .bind(msg, deliveryId)
+        .run();
+      return apiError(msg, 502);
+    }
+  }
+  return apiError("Ungültige Integrationsaktion");
+}
+const parse = (v: unknown, f: any) => {
+    try {
+      return JSON.parse(String(v));
+    } catch {
+      return f;
+    }
+  },
+  token = (n: number) =>
+    Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) =>
+      b.toString(16).padStart(2, "0"),
+    )
+      .join("")
+      .slice(0, n),
+  sha256 = async (v: string) =>
+    Array.from(
+      new Uint8Array(
+        await crypto.subtle.digest("SHA-256", new TextEncoder().encode(v)),
+      ),
+      (b) => b.toString(16).padStart(2, "0"),
+    ).join(""),
+  hmac = async (key: string, body: string) => {
+    const k = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(key),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    return `sha256=${Array.from(new Uint8Array(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(body))), (b) => b.toString(16).padStart(2, "0")).join("")}`;
+  };

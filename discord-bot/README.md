@@ -1,4 +1,4 @@
-# ConvoyHub Discord-Bot
+# VTC Truck Hub Discord-Bot
 
 Der eigenständige Gateway-Prozess übernimmt Willkommensnachrichten und automatische Rollen. Slash-Commands und Ticket-Modals werden signiert über die Plattform verarbeitet.
 

@@ -79,6 +79,7 @@ type SupabaseMembership = {
   role?: string | null;
   status?: string | null;
 };
+type SupabaseVtc={id:string;slug?:string|null;name?:string|null;tag?:string|null;description?:string|null;country?:string|null;city?:string|null;discord_url?:string|null;website_url?:string|null;created_by?:string|null;created_at?:string|null};
 
 function importedRole(role: string | null | undefined) {
   const normalized = String(role ?? "driver").trim().toLowerCase();
@@ -116,8 +117,18 @@ export async function syncSupabaseMemberships(accessToken: string, externalUserI
   });
   if (!response.ok) return;
   const memberships = await response.json() as SupabaseMembership[];
+  const vtcResponse=await fetch(`${cfg.url}/rest/v1/vtcs?select=id,slug,name,tag,description,country,city,discord_url,website_url,created_by,created_at`,{headers:{apikey:cfg.key,Authorization:`Bearer ${accessToken}`}});
+  const availableVtcs=vtcResponse.ok?await vtcResponse.json() as SupabaseVtc[]:[];
+  const membershipIds=new Set(memberships.map(m=>String(m.vtc_id??"")));
+  const relevant=availableVtcs.filter(v=>membershipIds.has(v.id)||v.created_by===externalUserId);
   const db = platformEnv().DB;
-  for (const membership of memberships) {
+  for(const vtc of relevant){
+    const name=String(vtc.name??"").trim(),tag=String(vtc.tag??"").trim();if(!name||!tag)continue;
+    await db.prepare(`INSERT INTO vtcs (id,slug,name,tag,description,country,city,discord_url,website_url,driver_count,created_at) VALUES (?,?,?,?,?,?,?,?,?,0,COALESCE(?,CURRENT_TIMESTAMP)) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,name=excluded.name,tag=excluded.tag,description=excluded.description,country=excluded.country,city=excluded.city,discord_url=excluded.discord_url,website_url=excluded.website_url`).bind(vtc.id,String(vtc.slug??vtc.id),name,tag,vtc.description??null,vtc.country??null,vtc.city??null,vtc.discord_url??null,vtc.website_url??null,vtc.created_at??null).run();
+  }
+  const complete=[...memberships];
+  for(const founded of relevant.filter(v=>v.created_by===externalUserId&&!membershipIds.has(v.id)))complete.push({vtc_id:founded.id,role:"owner",status:"active"});
+  for (const membership of complete) {
     const vtcId = String(membership.vtc_id ?? "").trim();
     if (!vtcId) continue;
     const vtc = await db.prepare(`SELECT id FROM vtcs WHERE id=?`).bind(vtcId).first<{ id: string }>();

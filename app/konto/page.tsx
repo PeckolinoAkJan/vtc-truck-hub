@@ -6,6 +6,16 @@ type User = {
   email: string | null;
   displayName: string;
   avatarUrl?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  street?: string | null;
+  postalCode?: string | null;
+  city?: string | null;
+  country?: string | null;
+  phone?: string | null;
+  locale?: string | null;
+  timezone?: string | null;
+  publicDisplayName?: number | boolean;
 };
 export default function Account() {
   const [user, setUser] = useState<User | null>(null),
@@ -51,12 +61,22 @@ export default function Account() {
     await fetch("/api/auth/me", { method: "DELETE" });
     setUser(null);
   }
+  async function saveProfile(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    const res = await fetch("/api/auth/me", {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({...values,publicDisplayName:values.publicDisplayName==="true"})});
+    const json = await res.json();
+    if (!res.ok) return setMessage(json.error ?? "Profil konnte nicht gespeichert werden.");
+    const fresh = await fetch("/api/auth/me").then(r=>r.json());
+    setUser(fresh.user);
+    setMessage("Profil wurde gespeichert.");
+  }
   return (
     <main className="account-page">
       <a className="brand account-brand" href="/">
-        <span className="brand-mark">CH</span>
+        <span className="brand-mark">VH</span>
         <span>
-          CONVOY<span>HUB</span>
+          VTC TRUCK <span>HUB</span>
         </span>
       </a>
       <section className="account-card">
@@ -73,12 +93,25 @@ export default function Account() {
               current={user.avatarUrl}
               onUploaded={(u) => setUser({ ...user, avatarUrl: u.url })}
             />
+            <form className="account-profile-form" onSubmit={saveProfile}>
+              <h2>Persönliche Daten bearbeiten</h2>
+              <label>Anzeigename<input name="displayName" defaultValue={user.displayName} minLength={2} required /></label>
+              <div className="account-profile-grid"><label>Vorname<input name="firstName" defaultValue={user.firstName??""} /></label><label>Nachname<input name="lastName" defaultValue={user.lastName??""} /></label></div>
+              <label>Straße und Hausnummer<input name="street" defaultValue={user.street??""} autoComplete="street-address" /></label>
+              <div className="account-profile-grid"><label>PLZ<input name="postalCode" defaultValue={user.postalCode??""} autoComplete="postal-code" /></label><label>Stadt<input name="city" defaultValue={user.city??""} autoComplete="address-level2" /></label></div>
+              <div className="account-profile-grid"><label>Land<input name="country" defaultValue={user.country??"Deutschland"} autoComplete="country-name" /></label><label>Telefon<input name="phone" defaultValue={user.phone??""} type="tel" autoComplete="tel" /></label></div>
+              <div className="account-profile-grid"><label>Sprache<select name="locale" defaultValue={user.locale??"de"}><option value="de">Deutsch</option><option value="en">English</option></select></label><label>Zeitzone<input name="timezone" defaultValue={user.timezone??"Europe/Berlin"} /></label></div>
+              <label className="account-consent"><input name="publicDisplayName" type="checkbox" value="true" defaultChecked={user.publicDisplayName!==0} /> Anzeigename im Fahrerprofil öffentlich zeigen</label>
+              <p className="privacy-note">Adresse und Telefonnummer bleiben privat und sind nicht auf öffentlichen Fahrerprofilen sichtbar.</p>
+              <button className="primary">Profil speichern</button>
+            </form>
             <div className="connected-box">
               <strong>Deine Verknüpfungen</strong>
               <a href="/api/auth/google/start">Google verbinden →</a>
               <a href="/api/auth/discord/start">Discord verbinden →</a>
               <a href="/api/auth/steam/start">Steam verbinden →</a>
               <a href="/konto/sicherheit">Sicherheit, Geräte & Datenschutz →</a>
+              <a href="/konto/sicherheit#passwort">Passwort ändern →</a>
             </div>
             <a className="primary" href="/dashboard">
               Zum Dashboard
@@ -203,7 +236,7 @@ export default function Account() {
         )}
       </section>
       <aside className="account-aside">
-        <span>CONVOYHUB ID</span>
+        <span>VTC TRUCK HUB ID</span>
         <h2>
           Eine Identität.
           <br />

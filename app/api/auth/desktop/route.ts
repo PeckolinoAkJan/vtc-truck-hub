@@ -23,6 +23,7 @@ export async function GET(request: Request) {
   if (!row || new Date(row.expiresAt).getTime() < Date.now()) return Response.json({ status: "expired" }, { status: 410 });
   if (row.consumedAt) return Response.json({ status: "consumed" }, { status: 410 });
   if (row.status !== "approved" || !row.id) return Response.json({ status: "pending", expiresAt: row.expiresAt });
+  const memberships=await db.prepare(`SELECT v.id,v.name,v.tag,r.name AS roleName FROM memberships m JOIN vtcs v ON v.id=m.vtc_id LEFT JOIN roles r ON r.id=m.role_id WHERE m.user_id=? AND m.status='active' ORDER BY r.rank DESC,v.name`).bind(row.id).all();
   await db.prepare(`UPDATE desktop_auth_requests SET consumed_at=CURRENT_TIMESTAMP WHERE token=? AND consumed_at IS NULL`).bind(token).run();
-  return Response.json({ status: "approved", user: { id: row.id, displayName: row.displayName, email: row.email } });
+  return Response.json({ status: "approved", user: { id: row.id, displayName: row.displayName, email: row.email },memberships:memberships.results,apiBase:new URL(request.url).origin });
 }

@@ -1,11 +1,420 @@
-import {apiError,audit,ensureDatabase,getSessionUser,platformEnv,randomId,requireVtcPermission} from "@/lib/platform";
-type Body={action?:string;vtcId?:string;applicationId?:string;driverName?:string;age?:number;country?:string;language?:string;timezone?:string;game?:string;answers?:Record<string,unknown>;status?:string;assignedTo?:string;score?:number;interviewAt?:string;testDriveAt?:string;reason?:string;note?:string;kind?:string;form?:{fields?:unknown[];deadline?:string;cooldownDays?:number;probationDays?:number;autoRoleId?:string;open?:boolean}};
-const statuses=["received","precheck","assigned","questions","interview","test_drive","waiting","accepted","rejected","withdrawn","blocked"];
-export async function GET(request:Request){await ensureDatabase();const url=new URL(request.url),vtcId=url.searchParams.get("vtcId")??"vtc-ngl",db=platformEnv().DB;if(url.searchParams.get("view")==="form"){const [vtc,form]=await Promise.all([db.prepare(`SELECT id,name,tag,minimum_age AS minimumAge,applications_open AS applicationsOpen FROM vtcs WHERE id=?`).bind(vtcId).first(),db.prepare(`SELECT fields,deadline,cooldown_days AS cooldownDays,probation_days AS probationDays,open FROM application_forms WHERE vtc_id=?`).bind(vtcId).first()]);return Response.json({vtc,form:form?{...form,fields:JSON.parse(String(form.fields))}:null})}const access=await requireVtcPermission(request,vtcId,"manage_applications");if(!access)return apiError("Personalrecht erforderlich",403);const [applications,notes,staff,form]=await Promise.all([db.prepare(`SELECT a.id,a.user_id AS userId,a.driver_name AS driverName,a.age,a.country,a.game,a.answers,a.status,a.created_at AS createdAt,a.updated_at AS updatedAt,w.assigned_to AS assignedTo,w.score,w.interview_at AS interviewAt,w.test_drive_at AS testDriveAt,w.reapply_after AS reapplyAfter,w.decision_reason AS decisionReason FROM applications a LEFT JOIN application_workflow w ON w.application_id=a.id WHERE a.vtc_id=? ORDER BY CASE a.status WHEN 'received' THEN 0 WHEN 'precheck' THEN 1 WHEN 'assigned' THEN 2 ELSE 3 END,a.created_at DESC`).bind(vtcId).all(),db.prepare(`SELECT n.id,n.application_id AS applicationId,n.body,n.kind,n.created_at AS createdAt,u.display_name AS author FROM application_notes n JOIN applications a ON a.id=n.application_id LEFT JOIN users u ON u.id=n.author_id WHERE a.vtc_id=? ORDER BY n.created_at`).bind(vtcId).all(),db.prepare(`SELECT m.user_id AS userId,u.display_name AS displayName,r.name AS roleName FROM memberships m JOIN users u ON u.id=m.user_id LEFT JOIN roles r ON r.id=m.role_id WHERE m.vtc_id=? AND m.status='active' ORDER BY u.display_name`).bind(vtcId).all(),db.prepare(`SELECT fields,deadline,cooldown_days AS cooldownDays,probation_days AS probationDays,auto_role_id AS autoRoleId,open FROM application_forms WHERE vtc_id=?`).bind(vtcId).first()]);return Response.json({applications:applications.results.map(a=>({...a,answers:JSON.parse(String(a.answers))})),notes:notes.results,staff:staff.results,form:form?{...form,fields:JSON.parse(String(form.fields))}:null})}
-export async function POST(request:Request){await ensureDatabase();const b=await request.json() as Body,db=platformEnv().DB,vtcId=b.vtcId??"vtc-ngl";
-  if(!b.action||b.action==="submit"){const vtc=await db.prepare(`SELECT applications_open AS applicationsOpen,minimum_age AS minimumAge FROM vtcs WHERE id=?`).bind(vtcId).first<{applicationsOpen:number;minimumAge:number}>(),form=await db.prepare(`SELECT fields,deadline,cooldown_days AS cooldownDays,open FROM application_forms WHERE vtc_id=?`).bind(vtcId).first<{fields:string;deadline:string|null;cooldownDays:number;open:number}>();if(!vtc||!form||!vtc.applicationsOpen||!form.open)return apiError("Bewerbungen sind derzeit geschlossen",409);if(form.deadline&&Date.parse(form.deadline)<Date.now())return apiError("Die Bewerbungsfrist ist abgelaufen",409);if(!b.driverName?.trim()||!b.game)return apiError("Fahrername und Spiel erforderlich");if(Number(b.age??0)<vtc.minimumAge)return apiError(`Mindestalter: ${vtc.minimumAge} Jahre`,409);const user=await getSessionUser(request);if(user&&await db.prepare(`SELECT id FROM applicant_blacklist WHERE vtc_id=? AND user_id=? AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP)`).bind(vtcId,user.id).first())return apiError("Für dieses Konto besteht eine Bewerbungssperre",403);if(user){const previous=await db.prepare(`SELECT id FROM applications WHERE vtc_id=? AND user_id=? AND status IN ('received','precheck','assigned','questions','interview','test_drive','waiting','rejected') AND updated_at>datetime('now',?) LIMIT 1`).bind(vtcId,user.id,`-${form.cooldownDays} days`).first();if(previous)return apiError(`Erneute Bewerbung erst nach ${form.cooldownDays} Tagen möglich`,409)}const fields=JSON.parse(form.fields) as {id:string;required?:boolean}[],answers=b.answers??{};for(const field of fields)if(field.required&&!String(answers[field.id]??"").trim())return apiError(`Pflichtfeld fehlt: ${field.id}`);const id=randomId();await db.batch([db.prepare(`INSERT INTO applications (id,vtc_id,user_id,driver_name,age,country,game,answers,status) VALUES (?,?,?,?,?,?,?,?,'received')`).bind(id,vtcId,user?.id??null,b.driverName.trim().slice(0,80),Number(b.age),String(b.country??"").slice(0,80),b.game,JSON.stringify({...answers,language:b.language,timezone:b.timezone})),db.prepare(`INSERT INTO application_workflow (application_id) VALUES (?)`).bind(id)]);await audit("application.created","application",id,user?.id??null,{game:b.game},vtcId);return Response.json({application:{id,status:"received"}},{status:201})}
-  const actor=await requireVtcPermission(request,vtcId,"manage_applications");if(!actor)return apiError("Personalrecht erforderlich",403);if(b.action==="saveForm"&&b.form){await db.prepare(`INSERT INTO application_forms (vtc_id,fields,deadline,cooldown_days,probation_days,auto_role_id,open) VALUES (?,?,?,?,?,?,?) ON CONFLICT(vtc_id) DO UPDATE SET fields=excluded.fields,deadline=excluded.deadline,cooldown_days=excluded.cooldown_days,probation_days=excluded.probation_days,auto_role_id=excluded.auto_role_id,open=excluded.open,updated_at=CURRENT_TIMESTAMP`).bind(vtcId,JSON.stringify(b.form.fields??[]),b.form.deadline??null,Math.max(0,b.form.cooldownDays??30),Math.max(0,b.form.probationDays??28),b.form.autoRoleId??null,b.form.open?1:0).run();await audit("application.form.updated","application_form",vtcId,actor.id,{},vtcId);return Response.json({saved:true})}if(!b.applicationId)return apiError("Bewerbungs-ID erforderlich");const application=await db.prepare(`SELECT id,user_id AS userId,driver_name AS driverName,status FROM applications WHERE id=? AND vtc_id=?`).bind(b.applicationId,vtcId).first<{id:string;userId:string|null;driverName:string;status:string}>();if(!application)return apiError("Bewerbung nicht gefunden",404);
-  if(b.action==="note"&&b.note?.trim()){await db.prepare(`INSERT INTO application_notes (id,application_id,author_id,body,kind) VALUES (?,?,?,?,?)`).bind(randomId(),application.id,actor.id,b.note.trim().slice(0,4000),b.kind==="applicant"?"applicant":"internal").run();await audit("application.note.created","application",application.id,actor.id,{kind:b.kind},vtcId);return Response.json({saved:true})}
-  if(b.action==="update"){if(b.status&&!statuses.includes(b.status))return apiError("Ungültiger Bewerbungsstatus");await db.batch([db.prepare(`UPDATE applications SET status=COALESCE(?,status),updated_at=CURRENT_TIMESTAMP WHERE id=? AND vtc_id=?`).bind(b.status??null,application.id,vtcId),db.prepare(`INSERT INTO application_workflow (application_id,assigned_to,score,interview_at,test_drive_at,decision_reason) VALUES (?,?,?,?,?,?) ON CONFLICT(application_id) DO UPDATE SET assigned_to=COALESCE(excluded.assigned_to,assigned_to),score=COALESCE(excluded.score,score),interview_at=COALESCE(excluded.interview_at,interview_at),test_drive_at=COALESCE(excluded.test_drive_at,test_drive_at),decision_reason=COALESCE(excluded.decision_reason,decision_reason),updated_at=CURRENT_TIMESTAMP`).bind(application.id,b.assignedTo??null,b.score??null,b.interviewAt??null,b.testDriveAt??null,b.reason??null)]);await audit("application.updated","application",application.id,actor.id,{status:b.status,assignedTo:b.assignedTo,score:b.score},vtcId);return Response.json({saved:true})}
-  if(b.action==="accept"){if(!application.userId)return apiError("Der Bewerber muss zuerst ein Benutzerkonto verknüpfen",409);const form=await db.prepare(`SELECT probation_days AS probationDays,auto_role_id AS autoRoleId FROM application_forms WHERE vtc_id=?`).bind(vtcId).first<{probationDays:number;autoRoleId:string|null}>(),next=await db.prepare(`SELECT COUNT(*)+1 value FROM memberships WHERE vtc_id=?`).bind(vtcId).first<{value:number}>();await db.batch([db.prepare(`UPDATE applications SET status='accepted',updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(application.id),db.prepare(`UPDATE application_workflow SET decision_reason=?,updated_at=CURRENT_TIMESTAMP WHERE application_id=?`).bind(b.reason??"Angenommen",application.id),db.prepare(`INSERT INTO memberships (id,vtc_id,user_id,role_id,driver_number,status,department) VALUES (?,?,?,?,?,'probation','Fahrbetrieb') ON CONFLICT(vtc_id,user_id) DO UPDATE SET role_id=excluded.role_id,status='probation'`).bind(randomId(),vtcId,application.userId,form?.autoRoleId??"role-ngl-probation",`DRV-${String(next?.value??1).padStart(4,"0")}`),db.prepare(`INSERT INTO personnel_records (id,vtc_id,user_id,probation_start,probation_end,status) VALUES (?,?,?,CURRENT_TIMESTAMP,datetime('now',?),'probation') ON CONFLICT(vtc_id,user_id) DO UPDATE SET probation_start=CURRENT_TIMESTAMP,probation_end=datetime('now',?),status='probation',updated_at=CURRENT_TIMESTAMP`).bind(randomId(),vtcId,application.userId,`+${form?.probationDays??28} days`,`+${form?.probationDays??28} days`),db.prepare(`INSERT INTO personnel_actions (id,vtc_id,user_id,type,new_value,note,actor_id) VALUES (?,?,?,'application_accepted','probation',?,?)`).bind(randomId(),vtcId,application.userId,b.reason??"Bewerbung angenommen",actor.id)]);await audit("application.accepted","application",application.id,actor.id,{userId:application.userId},vtcId);return Response.json({accepted:true})}
-  if(b.action==="blacklist"){await db.batch([db.prepare(`INSERT INTO applicant_blacklist (id,vtc_id,user_id,identity,reason,created_by) VALUES (?,?,?,?,?,?)`).bind(randomId(),vtcId,application.userId,application.driverName,b.reason??"Durch Personal gesperrt",actor.id),db.prepare(`UPDATE applications SET status='blocked',updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(application.id)]);await audit("application.blacklisted","application",application.id,actor.id,{reason:b.reason},vtcId);return Response.json({blocked:true})}return apiError("Ungültige Bewerbungsaktion")}
+import {
+  apiError,
+  audit,
+  ensureDatabase,
+  getSessionUser,
+  platformEnv,
+  randomId,
+  requireVtcPermission,
+  resolveVtcId,
+} from "@/lib/platform";
+type Body = {
+  action?: string;
+  vtcId?: string;
+  applicationId?: string;
+  driverName?: string;
+  age?: number;
+  country?: string;
+  language?: string;
+  timezone?: string;
+  game?: string;
+  answers?: Record<string, unknown>;
+  status?: string;
+  assignedTo?: string;
+  score?: number;
+  interviewAt?: string;
+  testDriveAt?: string;
+  reason?: string;
+  note?: string;
+  kind?: string;
+  form?: {
+    fields?: unknown[];
+    deadline?: string;
+    cooldownDays?: number;
+    probationDays?: number;
+    autoRoleId?: string;
+    open?: boolean;
+  };
+};
+const statuses = [
+  "received",
+  "precheck",
+  "assigned",
+  "questions",
+  "interview",
+  "test_drive",
+  "waiting",
+  "accepted",
+  "rejected",
+  "withdrawn",
+  "blocked",
+];
+export async function GET(request: Request) {
+  await ensureDatabase();
+  const url = new URL(request.url),
+    requested=url.searchParams.get("vtcId"),vtcId = requested&&!['vtc-ngl','vtc-ast','vtc-r66'].includes(requested)?requested:(await resolveVtcId(request,requested))??"",
+    db = platformEnv().DB;
+  if (url.searchParams.get("view") === "form") {
+    const [vtc, form] = await Promise.all([
+      db
+        .prepare(
+          `SELECT id,name,tag,minimum_age AS minimumAge,applications_open AS applicationsOpen FROM vtcs WHERE id=?`,
+        )
+        .bind(vtcId)
+        .first(),
+      db
+        .prepare(
+          `SELECT fields,deadline,cooldown_days AS cooldownDays,probation_days AS probationDays,open FROM application_forms WHERE vtc_id=?`,
+        )
+        .bind(vtcId)
+        .first(),
+    ]);
+    return Response.json({
+      vtc,
+      form: form ? { ...form, fields: JSON.parse(String(form.fields)) } : null,
+    });
+  }
+  const access = await requireVtcPermission(
+    request,
+    vtcId,
+    "manage_applications",
+  );
+  if (!access) return apiError("Personalrecht erforderlich", 403);
+  const [applications, notes, staff, form] = await Promise.all([
+    db
+      .prepare(
+        `SELECT a.id,a.user_id AS userId,a.driver_name AS driverName,a.age,a.country,a.game,a.answers,a.status,a.created_at AS createdAt,a.updated_at AS updatedAt,w.assigned_to AS assignedTo,w.score,w.interview_at AS interviewAt,w.test_drive_at AS testDriveAt,w.reapply_after AS reapplyAfter,w.decision_reason AS decisionReason FROM applications a LEFT JOIN application_workflow w ON w.application_id=a.id WHERE a.vtc_id=? ORDER BY CASE a.status WHEN 'received' THEN 0 WHEN 'precheck' THEN 1 WHEN 'assigned' THEN 2 ELSE 3 END,a.created_at DESC`,
+      )
+      .bind(vtcId)
+      .all(),
+    db
+      .prepare(
+        `SELECT n.id,n.application_id AS applicationId,n.body,n.kind,n.created_at AS createdAt,u.display_name AS author FROM application_notes n JOIN applications a ON a.id=n.application_id LEFT JOIN users u ON u.id=n.author_id WHERE a.vtc_id=? ORDER BY n.created_at`,
+      )
+      .bind(vtcId)
+      .all(),
+    db
+      .prepare(
+        `SELECT m.user_id AS userId,u.display_name AS displayName,r.name AS roleName FROM memberships m JOIN users u ON u.id=m.user_id LEFT JOIN roles r ON r.id=m.role_id WHERE m.vtc_id=? AND m.status='active' ORDER BY u.display_name`,
+      )
+      .bind(vtcId)
+      .all(),
+    db
+      .prepare(
+        `SELECT fields,deadline,cooldown_days AS cooldownDays,probation_days AS probationDays,auto_role_id AS autoRoleId,open FROM application_forms WHERE vtc_id=?`,
+      )
+      .bind(vtcId)
+      .first(),
+  ]);
+  return Response.json({
+    applications: applications.results.map((a) => ({
+      ...a,
+      answers: JSON.parse(String(a.answers)),
+    })),
+    notes: notes.results,
+    staff: staff.results,
+    form: form ? { ...form, fields: JSON.parse(String(form.fields)) } : null,
+  });
+}
+export async function POST(request: Request) {
+  await ensureDatabase();
+  const b = (await request.json()) as Body,
+    db = platformEnv().DB,
+    requested=b.vtcId,vtcId = requested&&!['vtc-ngl','vtc-ast','vtc-r66'].includes(requested)?requested:(await resolveVtcId(request,requested))??"";
+  if (!b.action || b.action === "submit") {
+    const vtc = await db
+        .prepare(
+          `SELECT applications_open AS applicationsOpen,minimum_age AS minimumAge FROM vtcs WHERE id=?`,
+        )
+        .bind(vtcId)
+        .first<{ applicationsOpen: number; minimumAge: number }>(),
+      form = await db
+        .prepare(
+          `SELECT fields,deadline,cooldown_days AS cooldownDays,open FROM application_forms WHERE vtc_id=?`,
+        )
+        .bind(vtcId)
+        .first<{
+          fields: string;
+          deadline: string | null;
+          cooldownDays: number;
+          open: number;
+        }>();
+    if (!vtc || !form || !vtc.applicationsOpen || !form.open)
+      return apiError("Bewerbungen sind derzeit geschlossen", 409);
+    if (form.deadline && Date.parse(form.deadline) < Date.now())
+      return apiError("Die Bewerbungsfrist ist abgelaufen", 409);
+    if (!b.driverName?.trim() || !b.game)
+      return apiError("Fahrername und Spiel erforderlich");
+    if (Number(b.age ?? 0) < vtc.minimumAge)
+      return apiError(`Mindestalter: ${vtc.minimumAge} Jahre`, 409);
+    const user = await getSessionUser(request);
+    if (
+      user &&
+      (await db
+        .prepare(
+          `SELECT id FROM applicant_blacklist WHERE vtc_id=? AND user_id=? AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP)`,
+        )
+        .bind(vtcId, user.id)
+        .first())
+    )
+      return apiError("Für dieses Konto besteht eine Bewerbungssperre", 403);
+    if (user) {
+      const previous = await db
+        .prepare(
+          `SELECT id FROM applications WHERE vtc_id=? AND user_id=? AND status IN ('received','precheck','assigned','questions','interview','test_drive','waiting','rejected') AND updated_at>datetime('now',?) LIMIT 1`,
+        )
+        .bind(vtcId, user.id, `-${form.cooldownDays} days`)
+        .first();
+      if (previous)
+        return apiError(
+          `Erneute Bewerbung erst nach ${form.cooldownDays} Tagen möglich`,
+          409,
+        );
+    }
+    const fields = JSON.parse(form.fields) as {
+        id: string;
+        required?: boolean;
+      }[],
+      answers = b.answers ?? {};
+    for (const field of fields)
+      if (field.required && !String(answers[field.id] ?? "").trim())
+        return apiError(`Pflichtfeld fehlt: ${field.id}`);
+    const id = randomId();
+    await db.batch([
+      db
+        .prepare(
+          `INSERT INTO applications (id,vtc_id,user_id,driver_name,age,country,game,answers,status) VALUES (?,?,?,?,?,?,?,?,'received')`,
+        )
+        .bind(
+          id,
+          vtcId,
+          user?.id ?? null,
+          b.driverName.trim().slice(0, 80),
+          Number(b.age),
+          String(b.country ?? "").slice(0, 80),
+          b.game,
+          JSON.stringify({
+            ...answers,
+            language: b.language,
+            timezone: b.timezone,
+          }),
+        ),
+      db
+        .prepare(`INSERT INTO application_workflow (application_id) VALUES (?)`)
+        .bind(id),
+    ]);
+    await audit(
+      "application.created",
+      "application",
+      id,
+      user?.id ?? null,
+      { game: b.game },
+      vtcId,
+    );
+    return Response.json(
+      { application: { id, status: "received" } },
+      { status: 201 },
+    );
+  }
+  const actor = await requireVtcPermission(
+    request,
+    vtcId,
+    "manage_applications",
+  );
+  if (!actor) return apiError("Personalrecht erforderlich", 403);
+  if (b.action === "saveForm" && b.form) {
+    await db
+      .prepare(
+        `INSERT INTO application_forms (vtc_id,fields,deadline,cooldown_days,probation_days,auto_role_id,open) VALUES (?,?,?,?,?,?,?) ON CONFLICT(vtc_id) DO UPDATE SET fields=excluded.fields,deadline=excluded.deadline,cooldown_days=excluded.cooldown_days,probation_days=excluded.probation_days,auto_role_id=excluded.auto_role_id,open=excluded.open,updated_at=CURRENT_TIMESTAMP`,
+      )
+      .bind(
+        vtcId,
+        JSON.stringify(b.form.fields ?? []),
+        b.form.deadline ?? null,
+        Math.max(0, b.form.cooldownDays ?? 30),
+        Math.max(0, b.form.probationDays ?? 28),
+        b.form.autoRoleId ?? null,
+        b.form.open ? 1 : 0,
+      )
+      .run();
+    await audit(
+      "application.form.updated",
+      "application_form",
+      vtcId,
+      actor.id,
+      {},
+      vtcId,
+    );
+    return Response.json({ saved: true });
+  }
+  if (!b.applicationId) return apiError("Bewerbungs-ID erforderlich");
+  const application = await db
+    .prepare(
+      `SELECT id,user_id AS userId,driver_name AS driverName,status FROM applications WHERE id=? AND vtc_id=?`,
+    )
+    .bind(b.applicationId, vtcId)
+    .first<{
+      id: string;
+      userId: string | null;
+      driverName: string;
+      status: string;
+    }>();
+  if (!application) return apiError("Bewerbung nicht gefunden", 404);
+  if (b.action === "note" && b.note?.trim()) {
+    await db
+      .prepare(
+        `INSERT INTO application_notes (id,application_id,author_id,body,kind) VALUES (?,?,?,?,?)`,
+      )
+      .bind(
+        randomId(),
+        application.id,
+        actor.id,
+        b.note.trim().slice(0, 4000),
+        b.kind === "applicant" ? "applicant" : "internal",
+      )
+      .run();
+    await audit(
+      "application.note.created",
+      "application",
+      application.id,
+      actor.id,
+      { kind: b.kind },
+      vtcId,
+    );
+    return Response.json({ saved: true });
+  }
+  if (b.action === "update") {
+    if (b.status && !statuses.includes(b.status))
+      return apiError("Ungültiger Bewerbungsstatus");
+    await db.batch([
+      db
+        .prepare(
+          `UPDATE applications SET status=COALESCE(?,status),updated_at=CURRENT_TIMESTAMP WHERE id=? AND vtc_id=?`,
+        )
+        .bind(b.status ?? null, application.id, vtcId),
+      db
+        .prepare(
+          `INSERT INTO application_workflow (application_id,assigned_to,score,interview_at,test_drive_at,decision_reason) VALUES (?,?,?,?,?,?) ON CONFLICT(application_id) DO UPDATE SET assigned_to=COALESCE(excluded.assigned_to,assigned_to),score=COALESCE(excluded.score,score),interview_at=COALESCE(excluded.interview_at,interview_at),test_drive_at=COALESCE(excluded.test_drive_at,test_drive_at),decision_reason=COALESCE(excluded.decision_reason,decision_reason),updated_at=CURRENT_TIMESTAMP`,
+        )
+        .bind(
+          application.id,
+          b.assignedTo ?? null,
+          b.score ?? null,
+          b.interviewAt ?? null,
+          b.testDriveAt ?? null,
+          b.reason ?? null,
+        ),
+    ]);
+    await audit(
+      "application.updated",
+      "application",
+      application.id,
+      actor.id,
+      { status: b.status, assignedTo: b.assignedTo, score: b.score },
+      vtcId,
+    );
+    return Response.json({ saved: true });
+  }
+  if (b.action === "accept") {
+    if (!application.userId)
+      return apiError(
+        "Der Bewerber muss zuerst ein Benutzerkonto verknüpfen",
+        409,
+      );
+    const form = await db
+        .prepare(
+          `SELECT probation_days AS probationDays,auto_role_id AS autoRoleId FROM application_forms WHERE vtc_id=?`,
+        )
+        .bind(vtcId)
+        .first<{ probationDays: number; autoRoleId: string | null }>(),
+      next = await db
+        .prepare(`SELECT COUNT(*)+1 value FROM memberships WHERE vtc_id=?`)
+        .bind(vtcId)
+        .first<{ value: number }>();
+    await db.batch([
+      db
+        .prepare(
+          `UPDATE applications SET status='accepted',updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+        )
+        .bind(application.id),
+      db
+        .prepare(
+          `UPDATE application_workflow SET decision_reason=?,updated_at=CURRENT_TIMESTAMP WHERE application_id=?`,
+        )
+        .bind(b.reason ?? "Angenommen", application.id),
+      db
+        .prepare(
+          `INSERT INTO memberships (id,vtc_id,user_id,role_id,driver_number,status,department) VALUES (?,?,?,?,?,'probation','Fahrbetrieb') ON CONFLICT(vtc_id,user_id) DO UPDATE SET role_id=excluded.role_id,status='probation'`,
+        )
+        .bind(
+          randomId(),
+          vtcId,
+          application.userId,
+          form?.autoRoleId ?? "role-ngl-probation",
+          `DRV-${String(next?.value ?? 1).padStart(4, "0")}`,
+        ),
+      db
+        .prepare(
+          `INSERT INTO personnel_records (id,vtc_id,user_id,probation_start,probation_end,status) VALUES (?,?,?,CURRENT_TIMESTAMP,datetime('now',?),'probation') ON CONFLICT(vtc_id,user_id) DO UPDATE SET probation_start=CURRENT_TIMESTAMP,probation_end=datetime('now',?),status='probation',updated_at=CURRENT_TIMESTAMP`,
+        )
+        .bind(
+          randomId(),
+          vtcId,
+          application.userId,
+          `+${form?.probationDays ?? 28} days`,
+          `+${form?.probationDays ?? 28} days`,
+        ),
+      db
+        .prepare(
+          `INSERT INTO personnel_actions (id,vtc_id,user_id,type,new_value,note,actor_id) VALUES (?,?,?,'application_accepted','probation',?,?)`,
+        )
+        .bind(
+          randomId(),
+          vtcId,
+          application.userId,
+          b.reason ?? "Bewerbung angenommen",
+          actor.id,
+        ),
+    ]);
+    await audit(
+      "application.accepted",
+      "application",
+      application.id,
+      actor.id,
+      { userId: application.userId },
+      vtcId,
+    );
+    return Response.json({ accepted: true });
+  }
+  if (b.action === "blacklist") {
+    await db.batch([
+      db
+        .prepare(
+          `INSERT INTO applicant_blacklist (id,vtc_id,user_id,identity,reason,created_by) VALUES (?,?,?,?,?,?)`,
+        )
+        .bind(
+          randomId(),
+          vtcId,
+          application.userId,
+          application.driverName,
+          b.reason ?? "Durch Personal gesperrt",
+          actor.id,
+        ),
+      db
+        .prepare(
+          `UPDATE applications SET status='blocked',updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+        )
+        .bind(application.id),
+    ]);
+    await audit(
+      "application.blacklisted",
+      "application",
+      application.id,
+      actor.id,
+      { reason: b.reason },
+      vtcId,
+    );
+    return Response.json({ blocked: true });
+  }
+  return apiError("Ungültige Bewerbungsaktion");
+}

@@ -1,10 +1,285 @@
-import {apiError,audit,ensureDatabase,getSessionUser,platformEnv,randomId,requireVtcPermission} from "@/lib/platform";type Body={action?:string;vtcId?:string;eventId?:string;participantId?:string;data?:Record<string,unknown>};const clean=(v:unknown,n=3000)=>String(v??"").trim().slice(0,n),arr=(v:unknown)=>Array.isArray(v)?v:String(v??"").split(",").map(x=>x.trim()).filter(Boolean);
-export async function GET(request:Request){await ensureDatabase();const db=platformEnv().DB,url=new URL(request.url),vtcId=url.searchParams.get("vtcId")??"vtc-ngl",scope=url.searchParams.get("scope")??"all",user=await getSessionUser(request),canManage=Boolean(await requireVtcPermission(request,vtcId,"manage_events"));let where=`e.vtc_id=?`;if(scope==="upcoming")where+=` AND e.starts_at>=CURRENT_TIMESTAMP`;if(scope==="public")where+=` AND e.public=1`;const [events,participants,feedback,reports]=await Promise.all([db.prepare(`SELECT e.*,d.*,e.id AS id,e.name AS name,e.game AS game,e.description AS description,e.source_city AS source_city,e.destination_city AS destination_city,e.starts_at AS starts_at,e.timezone AS timezone,e.server AS server,e.capacity AS capacity,e.public AS public,(SELECT COUNT(*) FROM event_participants p WHERE p.event_id=e.id AND p.status IN ('registered','confirmed','waitlist')) participant_count FROM events e LEFT JOIN event_details d ON d.event_id=e.id WHERE ${where} ORDER BY e.starts_at`).bind(vtcId).all(),db.prepare(`SELECT p.*,u.display_name AS driver,v.name AS external_vtc FROM event_participants p JOIN events e ON e.id=p.event_id LEFT JOIN users u ON u.id=p.user_id LEFT JOIN vtcs v ON v.id=p.external_vtc_id WHERE e.vtc_id=? ORDER BY p.created_at`).bind(vtcId).all(),db.prepare(`SELECT f.*,u.display_name AS driver FROM event_feedback f JOIN events e ON e.id=f.event_id JOIN users u ON u.id=f.user_id WHERE e.vtc_id=? ORDER BY f.created_at DESC`).bind(vtcId).all(),db.prepare(`SELECT r.* FROM event_reports r JOIN events e ON e.id=r.event_id WHERE e.vtc_id=?`).bind(vtcId).all()]);return Response.json({user:user?{id:user.id,displayName:user.displayName}:null,canManage,events:(events.results as any[]).map(e=>({...e,dlc_requirements:json(e.dlc_requirements,[]),mod_requirements:json(e.mod_requirements,[])})),participants:participants.results,feedback:feedback.results,reports:(reports.results as any[]).map(r=>({...r,photos:json(r.photos,[]),videos:json(r.videos,[]),awards:json(r.awards,[])}))})}
-export async function POST(request:Request){await ensureDatabase();const b=await request.json() as Body,db=platformEnv().DB,vtcId=b.vtcId??"vtc-ngl",user=await getSessionUser(request),d=b.data??{};
- if(["register","withdraw","feedback"].includes(b.action||"")){if(!user)return apiError("Anmeldung erforderlich",401);if(!b.eventId)return apiError("Event fehlt");const event=await db.prepare(`SELECT id,capacity,(SELECT COUNT(*) FROM event_participants WHERE event_id=? AND status IN ('registered','confirmed')) count FROM events WHERE id=? AND (public=1 OR vtc_id=?)`).bind(b.eventId,b.eventId,vtcId).first<any>();if(!event)return apiError("Event nicht gefunden",404);if(b.action==="register"){const status=event.capacity&&event.count>=event.capacity?"waitlist":"registered";await db.prepare(`INSERT INTO event_participants (id,event_id,user_id,status,role,note) VALUES (?,?,?,?,?,?) ON CONFLICT(event_id,user_id) DO UPDATE SET status=excluded.status,note=excluded.note`).bind(randomId(),event.id,user.id,status,clean(d.role,50)||"participant",clean(d.note,1000)||null).run();return Response.json({saved:true,status})}if(b.action==="withdraw"){await db.prepare(`UPDATE event_participants SET status='withdrawn' WHERE event_id=? AND user_id=?`).bind(event.id,user.id).run();return Response.json({saved:true})}const rating=Math.max(1,Math.min(5,Math.round(Number(d.rating)||0)));await db.prepare(`INSERT INTO event_feedback (id,event_id,user_id,rating,body) VALUES (?,?,?,?,?) ON CONFLICT(event_id,user_id) DO UPDATE SET rating=excluded.rating,body=excluded.body`).bind(randomId(),event.id,user.id,rating,clean(d.body,1500)||null).run();return Response.json({saved:true})}
- const actor=await requireVtcPermission(request,vtcId,"manage_events");if(!actor)return apiError("Eventrecht erforderlich",403);
- if(b.action==="save"){const id=b.eventId||randomId(),name=clean(d.name,160),game=clean(d.game,10),source=clean(d.sourceCity,100),destination=clean(d.destinationCity,100),starts=clean(d.startsAt,30);if(!name||!["ETS2","ATS"].includes(game)||!source||!destination||!starts)return apiError("Name, Spiel, Start, Ziel und Datum erforderlich");await db.batch([db.prepare(`INSERT INTO events (id,vtc_id,name,game,description,source_city,destination_city,starts_at,timezone,server,capacity,public) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,game=excluded.game,description=excluded.description,source_city=excluded.source_city,destination_city=excluded.destination_city,starts_at=excluded.starts_at,timezone=excluded.timezone,server=excluded.server,capacity=excluded.capacity,public=excluded.public`).bind(id,vtcId,name,game,clean(d.description,5000)||null,source,destination,starts,clean(d.timezone,80)||"Europe/Berlin",clean(d.server,120)||null,Number(d.capacity)||null,d.public===false?0:1),db.prepare(`INSERT INTO event_details (event_id,meeting_at,departure_at,route,distance_km,dlc_requirements,mod_requirements,trailer_rules,vehicle_rules,event_rules,discord_channel,contact_name,convoy_server,status,notes,created_by,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(event_id) DO UPDATE SET meeting_at=excluded.meeting_at,departure_at=excluded.departure_at,route=excluded.route,distance_km=excluded.distance_km,dlc_requirements=excluded.dlc_requirements,mod_requirements=excluded.mod_requirements,trailer_rules=excluded.trailer_rules,vehicle_rules=excluded.vehicle_rules,event_rules=excluded.event_rules,discord_channel=excluded.discord_channel,contact_name=excluded.contact_name,convoy_server=excluded.convoy_server,status=excluded.status,notes=excluded.notes,updated_at=CURRENT_TIMESTAMP`).bind(id,clean(d.meetingAt,30)||null,clean(d.departureAt,30)||null,clean(d.route,3000)||null,Number(d.distanceKm)||null,JSON.stringify(arr(d.dlcRequirements)),JSON.stringify(arr(d.modRequirements)),clean(d.trailerRules,2000)||null,clean(d.vehicleRules,2000)||null,clean(d.eventRules,3000)||null,clean(d.discordChannel,120)||null,clean(d.contactName,120)||null,clean(d.convoyServer,120)||null,clean(d.status,30)||"planned",clean(d.notes,3000)||null,actor.id)]);await audit("event.saved","event",id,actor.id,{name},vtcId);return Response.json({saved:true,id})}
- if(b.action==="participant"&&b.participantId){const status=clean(d.status,30),role=clean(d.role,50)||"participant";await db.prepare(`UPDATE event_participants SET status=?,role=?,slot=?,attendance=?,note=? WHERE id=? AND event_id IN (SELECT id FROM events WHERE vtc_id=?)`).bind(status,role,clean(d.slot,60)||null,clean(d.attendance,30)||null,clean(d.note,1000)||null,b.participantId,vtcId).run();if(d.checkIn)await db.prepare(`UPDATE event_participants SET checked_in_at=CURRENT_TIMESTAMP WHERE id=?`).bind(b.participantId).run();return Response.json({saved:true})}
- if(b.action==="report"&&b.eventId){await db.prepare(`INSERT INTO event_reports (event_id,summary,distance_km,photos,videos,awards,published,updated_at) SELECT id,?,?,?,?,?,?,CURRENT_TIMESTAMP FROM events WHERE id=? AND vtc_id=? ON CONFLICT(event_id) DO UPDATE SET summary=excluded.summary,distance_km=excluded.distance_km,photos=excluded.photos,videos=excluded.videos,awards=excluded.awards,published=excluded.published,updated_at=CURRENT_TIMESTAMP`).bind(clean(d.summary,7000)||null,Number(d.distanceKm)||null,JSON.stringify(arr(d.photos)),JSON.stringify(arr(d.videos)),JSON.stringify(arr(d.awards)),d.published?1:0,b.eventId,vtcId).run();return Response.json({saved:true})}
- if(b.action==="duplicate"&&b.eventId){const source=await db.prepare(`SELECT * FROM events WHERE id=? AND vtc_id=?`).bind(b.eventId,vtcId).first<any>();if(!source)return apiError("Event nicht gefunden",404);const id=randomId();await db.prepare(`INSERT INTO events (id,vtc_id,name,game,description,source_city,destination_city,starts_at,timezone,server,capacity,public) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id,vtcId,`${source.name} (Wiederholung)`,source.game,source.description,source.source_city,source.destination_city,clean(d.startsAt,30)||source.starts_at,source.timezone,source.server,source.capacity,source.public).run();return Response.json({saved:true,id})}return apiError("Ungültige Eventaktion")}
-const json=(v:unknown,f:any)=>{try{return JSON.parse(String(v))}catch{return f}};
+import {
+  apiError,
+  audit,
+  ensureDatabase,
+  getSessionUser,
+  platformEnv,
+  randomId,
+  resolveVtcId,
+  requireVtcPermission,
+} from "@/lib/platform";
+type Body = {
+  action?: string;
+  vtcId?: string;
+  eventId?: string;
+  participantId?: string;
+  data?: Record<string, unknown>;
+};
+const clean = (v: unknown, n = 3000) =>
+    String(v ?? "")
+      .trim()
+      .slice(0, n),
+  arr = (v: unknown) =>
+    Array.isArray(v)
+      ? v
+      : String(v ?? "")
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean);
+export async function GET(request: Request) {
+  await ensureDatabase();
+  const db = platformEnv().DB,
+    url = new URL(request.url),
+    requested = url.searchParams.get("vtcId"),
+    vtcId = (await resolveVtcId(request, requested)) ?? "",
+    scope = url.searchParams.get("scope") ?? "all",
+    user = await getSessionUser(request),
+    canManage = Boolean(
+      vtcId && await requireVtcPermission(request, vtcId, "manage_events"),
+    );
+  let where = `((?='' AND e.public=1) OR e.vtc_id=?)`;
+  if (scope === "upcoming") where += ` AND e.starts_at>=CURRENT_TIMESTAMP`;
+  if (scope === "public") where += ` AND e.public=1`;
+  const [events, participants, feedback, reports] = await Promise.all([
+    db
+      .prepare(
+        `SELECT e.*,d.*,e.id AS id,e.name AS name,e.game AS game,e.description AS description,e.source_city AS source_city,e.destination_city AS destination_city,e.starts_at AS starts_at,e.timezone AS timezone,e.server AS server,e.capacity AS capacity,e.public AS public,(SELECT COUNT(*) FROM event_participants p WHERE p.event_id=e.id AND p.status IN ('registered','confirmed','waitlist')) participant_count FROM events e LEFT JOIN event_details d ON d.event_id=e.id WHERE ${where} ORDER BY e.starts_at`,
+      )
+      .bind(vtcId, vtcId)
+      .all(),
+    db
+      .prepare(
+        `SELECT p.*,u.display_name AS driver,v.name AS external_vtc FROM event_participants p JOIN events e ON e.id=p.event_id LEFT JOIN users u ON u.id=p.user_id LEFT JOIN vtcs v ON v.id=p.external_vtc_id WHERE ?<>'' AND e.vtc_id=? ORDER BY p.created_at`,
+      )
+      .bind(vtcId, vtcId)
+      .all(),
+    db
+      .prepare(
+        `SELECT f.*,u.display_name AS driver FROM event_feedback f JOIN events e ON e.id=f.event_id JOIN users u ON u.id=f.user_id WHERE ?<>'' AND e.vtc_id=? ORDER BY f.created_at DESC`,
+      )
+      .bind(vtcId, vtcId)
+      .all(),
+    db
+      .prepare(
+        `SELECT r.* FROM event_reports r JOIN events e ON e.id=r.event_id WHERE ((?='' AND e.public=1 AND r.published=1) OR e.vtc_id=?)`,
+      )
+      .bind(vtcId, vtcId)
+      .all(),
+  ]);
+  return Response.json({
+    user: user ? { id: user.id, displayName: user.displayName } : null,
+    canManage,
+    events: (events.results as any[]).map((e) => ({
+      ...e,
+      dlc_requirements: json(e.dlc_requirements, []),
+      mod_requirements: json(e.mod_requirements, []),
+    })),
+    participants: participants.results,
+    feedback: feedback.results,
+    reports: (reports.results as any[]).map((r) => ({
+      ...r,
+      photos: json(r.photos, []),
+      videos: json(r.videos, []),
+      awards: json(r.awards, []),
+    })),
+  });
+}
+export async function POST(request: Request) {
+  await ensureDatabase();
+  const b = (await request.json()) as Body,
+    db = platformEnv().DB,
+    user = await getSessionUser(request),
+    d = b.data ?? {};
+  if (["register", "withdraw", "feedback"].includes(b.action || "")) {
+    if (!user) return apiError("Anmeldung erforderlich", 401);
+    if (!b.eventId) return apiError("Event fehlt");
+    const event = await db
+      .prepare(
+        `SELECT id,capacity,(SELECT COUNT(*) FROM event_participants WHERE event_id=? AND status IN ('registered','confirmed')) count FROM events WHERE id=? AND (public=1 OR vtc_id IN (SELECT vtc_id FROM memberships WHERE user_id=? AND status='active'))`,
+      )
+      .bind(b.eventId, b.eventId, user.id)
+      .first<any>();
+    if (!event) return apiError("Event nicht gefunden", 404);
+    if (b.action === "register") {
+      const status =
+        event.capacity && event.count >= event.capacity
+          ? "waitlist"
+          : "registered";
+      await db
+        .prepare(
+          `INSERT INTO event_participants (id,event_id,user_id,status,role,note) VALUES (?,?,?,?,?,?) ON CONFLICT(event_id,user_id) DO UPDATE SET status=excluded.status,note=excluded.note`,
+        )
+        .bind(
+          randomId(),
+          event.id,
+          user.id,
+          status,
+          clean(d.role, 50) || "participant",
+          clean(d.note, 1000) || null,
+        )
+        .run();
+      return Response.json({ saved: true, status });
+    }
+    if (b.action === "withdraw") {
+      await db
+        .prepare(
+          `UPDATE event_participants SET status='withdrawn' WHERE event_id=? AND user_id=?`,
+        )
+        .bind(event.id, user.id)
+        .run();
+      return Response.json({ saved: true });
+    }
+    const rating = Math.max(1, Math.min(5, Math.round(Number(d.rating) || 0)));
+    await db
+      .prepare(
+        `INSERT INTO event_feedback (id,event_id,user_id,rating,body) VALUES (?,?,?,?,?) ON CONFLICT(event_id,user_id) DO UPDATE SET rating=excluded.rating,body=excluded.body`,
+      )
+      .bind(randomId(), event.id, user.id, rating, clean(d.body, 1500) || null)
+      .run();
+    return Response.json({ saved: true });
+  }
+  const vtcId = await resolveVtcId(request, b.vtcId);
+  if (!vtcId) return apiError("Keine eigene Spedition gefunden", 403);
+  const actor = await requireVtcPermission(request, vtcId, "manage_events");
+  if (!actor) return apiError("Eventrecht erforderlich", 403);
+  if (b.action === "save") {
+    const id = b.eventId || randomId(),
+      name = clean(d.name, 160),
+      game = clean(d.game, 10),
+      source = clean(d.sourceCity, 100),
+      destination = clean(d.destinationCity, 100),
+      starts = clean(d.startsAt, 30);
+    if (
+      !name ||
+      !["ETS2", "ATS"].includes(game) ||
+      !source ||
+      !destination ||
+      !starts
+    )
+      return apiError("Name, Spiel, Start, Ziel und Datum erforderlich");
+    await db.batch([
+      db
+        .prepare(
+          `INSERT INTO events (id,vtc_id,name,game,description,source_city,destination_city,starts_at,timezone,server,capacity,public) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,game=excluded.game,description=excluded.description,source_city=excluded.source_city,destination_city=excluded.destination_city,starts_at=excluded.starts_at,timezone=excluded.timezone,server=excluded.server,capacity=excluded.capacity,public=excluded.public`,
+        )
+        .bind(
+          id,
+          vtcId,
+          name,
+          game,
+          clean(d.description, 5000) || null,
+          source,
+          destination,
+          starts,
+          clean(d.timezone, 80) || "Europe/Berlin",
+          clean(d.server, 120) || null,
+          Number(d.capacity) || null,
+          d.public === false ? 0 : 1,
+        ),
+      db
+        .prepare(
+          `INSERT INTO event_details (event_id,meeting_at,departure_at,route,distance_km,dlc_requirements,mod_requirements,trailer_rules,vehicle_rules,event_rules,discord_channel,contact_name,convoy_server,status,notes,created_by,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(event_id) DO UPDATE SET meeting_at=excluded.meeting_at,departure_at=excluded.departure_at,route=excluded.route,distance_km=excluded.distance_km,dlc_requirements=excluded.dlc_requirements,mod_requirements=excluded.mod_requirements,trailer_rules=excluded.trailer_rules,vehicle_rules=excluded.vehicle_rules,event_rules=excluded.event_rules,discord_channel=excluded.discord_channel,contact_name=excluded.contact_name,convoy_server=excluded.convoy_server,status=excluded.status,notes=excluded.notes,updated_at=CURRENT_TIMESTAMP`,
+        )
+        .bind(
+          id,
+          clean(d.meetingAt, 30) || null,
+          clean(d.departureAt, 30) || null,
+          clean(d.route, 3000) || null,
+          Number(d.distanceKm) || null,
+          JSON.stringify(arr(d.dlcRequirements)),
+          JSON.stringify(arr(d.modRequirements)),
+          clean(d.trailerRules, 2000) || null,
+          clean(d.vehicleRules, 2000) || null,
+          clean(d.eventRules, 3000) || null,
+          clean(d.discordChannel, 120) || null,
+          clean(d.contactName, 120) || null,
+          clean(d.convoyServer, 120) || null,
+          clean(d.status, 30) || "planned",
+          clean(d.notes, 3000) || null,
+          actor.id,
+        ),
+    ]);
+    await audit("event.saved", "event", id, actor.id, { name }, vtcId);
+    return Response.json({ saved: true, id });
+  }
+  if (b.action === "participant" && b.participantId) {
+    const status = clean(d.status, 30),
+      role = clean(d.role, 50) || "participant";
+    await db
+      .prepare(
+        `UPDATE event_participants SET status=?,role=?,slot=?,attendance=?,note=? WHERE id=? AND event_id IN (SELECT id FROM events WHERE vtc_id=?)`,
+      )
+      .bind(
+        status,
+        role,
+        clean(d.slot, 60) || null,
+        clean(d.attendance, 30) || null,
+        clean(d.note, 1000) || null,
+        b.participantId,
+        vtcId,
+      )
+      .run();
+    if (d.checkIn)
+      await db
+        .prepare(
+          `UPDATE event_participants SET checked_in_at=CURRENT_TIMESTAMP WHERE id=?`,
+        )
+        .bind(b.participantId)
+        .run();
+    return Response.json({ saved: true });
+  }
+  if (b.action === "report" && b.eventId) {
+    await db
+      .prepare(
+        `INSERT INTO event_reports (event_id,summary,distance_km,photos,videos,awards,published,updated_at) SELECT id,?,?,?,?,?,?,CURRENT_TIMESTAMP FROM events WHERE id=? AND vtc_id=? ON CONFLICT(event_id) DO UPDATE SET summary=excluded.summary,distance_km=excluded.distance_km,photos=excluded.photos,videos=excluded.videos,awards=excluded.awards,published=excluded.published,updated_at=CURRENT_TIMESTAMP`,
+      )
+      .bind(
+        clean(d.summary, 7000) || null,
+        Number(d.distanceKm) || null,
+        JSON.stringify(arr(d.photos)),
+        JSON.stringify(arr(d.videos)),
+        JSON.stringify(arr(d.awards)),
+        d.published ? 1 : 0,
+        b.eventId,
+        vtcId,
+      )
+      .run();
+    return Response.json({ saved: true });
+  }
+  if (b.action === "duplicate" && b.eventId) {
+    const source = await db
+      .prepare(`SELECT * FROM events WHERE id=? AND vtc_id=?`)
+      .bind(b.eventId, vtcId)
+      .first<any>();
+    if (!source) return apiError("Event nicht gefunden", 404);
+    const id = randomId();
+    await db
+      .prepare(
+        `INSERT INTO events (id,vtc_id,name,game,description,source_city,destination_city,starts_at,timezone,server,capacity,public) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .bind(
+        id,
+        vtcId,
+        `${source.name} (Wiederholung)`,
+        source.game,
+        source.description,
+        source.source_city,
+        source.destination_city,
+        clean(d.startsAt, 30) || source.starts_at,
+        source.timezone,
+        source.server,
+        source.capacity,
+        source.public,
+      )
+      .run();
+    return Response.json({ saved: true, id });
+  }
+  return apiError("Ungültige Eventaktion");
+}
+const json = (v: unknown, f: any) => {
+  try {
+    return JSON.parse(String(v));
+  } catch {
+    return f;
+  }
+};

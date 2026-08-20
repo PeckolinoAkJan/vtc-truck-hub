@@ -1,0 +1,38 @@
+name: Desktop-Client Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Install Windows build tools
+        run: choco install cmake innosetup --no-progress -y
+      - name: Build native SCS telemetry plugin
+        shell: pwsh
+        run: |
+          cmake -S desktop-client/ConvoyHub.ScsPlugin -B desktop-client/ConvoyHub.ScsPlugin/build -A x64
+          cmake --build desktop-client/ConvoyHub.ScsPlugin/build --config Release
+          Copy-Item desktop-client/ConvoyHub.ScsPlugin/build/Release/convoyhub_scs.dll desktop-client/ConvoyHub.Client/plugins/convoyhub_scs.dll -Force
+      - name: Publish self-contained Windows client
+        run: dotnet publish desktop-client/ConvoyHub.Client/ConvoyHub.Client.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishReadyToRun=true -o desktop-client/publish
+      - name: Build setup executable
+        run: iscc desktop-client/installer/VTCTruckHub.iss
+      - name: Create checksum
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem desktop-client/installer/output/*Setup*.exe | Select-Object -First 1
+          (Get-FileHash $setup.FullName -Algorithm SHA256).Hash + "  " + $setup.Name | Set-Content ($setup.FullName + ".sha256")
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop-client/installer/output/*.exe
+            desktop-client/installer/output/*.sha256
+          generate_release_notes: true

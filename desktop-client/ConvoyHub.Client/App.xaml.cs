@@ -18,13 +18,13 @@ public partial class App : System.Windows.Application
         {
             var directory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "ConvoyHub");
+                "VTC Truck Hub");
             Directory.CreateDirectory(directory);
             var logPath = Path.Combine(directory, "startup-error.log");
             File.WriteAllText(logPath, ex.ToString());
             System.Windows.MessageBox.Show(
-                $"Der ConvoyHub Client konnte nicht gestartet werden.\n\n{ex.Message}\n\nProtokoll: {logPath}",
-                "ConvoyHub – Startfehler",
+                $"Der VTC Truck Hub Client konnte nicht gestartet werden.\n\n{ex.Message}\n\nProtokoll: {logPath}",
+                "VTC Truck Hub – Startfehler",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             Shutdown(1);

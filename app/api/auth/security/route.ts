@@ -9,6 +9,7 @@ import {
   randomId,
   sha256,
   verifyTotp,
+  verifyPassword,
 } from "@/lib/platform";
 const clean = (v: unknown, n = 300) =>
     String(v ?? "")
@@ -21,6 +22,38 @@ export async function GET(request: Request) {
   await ensureDatabase();
   const user = await getSessionUser(request);
   if (!user) return apiError("Anmeldung erforderlich", 401);
+  if (action === "changePassword") {
+    const row = await db
+      .prepare(`SELECT password_hash AS passwordHash FROM users WHERE id=?`)
+      .bind(user.id)
+      .first<{ passwordHash: string | null }>();
+    if (!row?.passwordHash)
+      return apiError(
+        "Dieses Konto verwendet eine externe Anmeldung. Lege das Passwort über die Passwort-zurücksetzen-Funktion fest",
+        409,
+      );
+    if (
+      !(await verifyPassword(clean(b.currentPassword, 300), row.passwordHash))
+    )
+      return apiError("Das aktuelle Passwort ist falsch", 403);
+    const next = clean(b.newPassword, 300);
+    if (next.length < 10)
+      return apiError("Das neue Passwort muss mindestens 10 Zeichen haben");
+    if (next !== clean(b.confirmPassword, 300))
+      return apiError("Die neuen Passwörter stimmen nicht überein");
+    await db.batch([
+      db
+        .prepare(
+          `UPDATE users SET password_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+        )
+        .bind(await hashPassword(next), user.id),
+      db
+        .prepare(`DELETE FROM sessions WHERE user_id=? AND id<>?`)
+        .bind(user.id, cookieToken(request) || ""),
+    ]);
+    await audit("account.password.changed", "user", user.id, user.id);
+    return Response.json({ saved: true });
+  }
   const db = platformEnv().DB,
     [security, sessions, links, events, consents] = await Promise.all([
       db
@@ -161,7 +194,7 @@ export async function POST(request: Request) {
   if (!user) return apiError("Anmeldung erforderlich", 401);
   if (action === "setup2fa") {
     const secret = randomBase32(),
-      issuer = encodeURIComponent("ConvoyHub"),
+      issuer = encodeURIComponent("VTC Truck Hub"),
       label = encodeURIComponent(`${user.email ?? user.displayName}`);
     await db
       .prepare(

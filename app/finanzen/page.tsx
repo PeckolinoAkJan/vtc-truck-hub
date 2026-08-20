@@ -1,10 +1,434 @@
 "use client";
-import {useEffect,useState} from "react";
-type Data={accounts:any[];entries:any[];budgets:any[];models:any[];payrolls:any[];lines:any[];summary:{income:number;expenses:number;profit:number;pending:number}};const money=(v:number)=>`${(v/100).toLocaleString("de-DE",{minimumFractionDigits:2})} V€`;
-export default function Finance(){const[data,setData]=useState<Data|null>(null),[tab,setTab]=useState("Abrechnungen"),[message,setMessage]=useState("");async function load(){const r=await fetch("/api/v1/finance?vtcId=vtc-ngl");if(!r.ok){location.href=r.status===401?"/konto":"/dashboard";return}setData(await r.json())}useEffect(()=>{load()},[]);async function act(body:object){const r=await fetch("/api/v1/finance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({vtcId:"vtc-ngl",...body})}),j=await r.json();setMessage(r.ok?"Finanzdaten wurden verbucht.":j.error);if(r.ok)await load()}if(!data)return <main className="finance-loading">Lohnbüro wird geladen …</main>;return <main className="finance-page"><header><div><span>NGL · LOHNBÜRO</span><h1>Virtuelle Finanzen & Abrechnung</h1></div><nav><a href="/abrechnung">Meine Abrechnung</a><a href="/dashboard">Dashboard</a></nav></header><section className="finance-stats"><article><small>EINNAHMEN</small><b>{money(data.summary.income)}</b></article><article><small>AUSGABEN</small><b>{money(data.summary.expenses)}</b></article><article><small>ERGEBNIS</small><b>{money(data.summary.profit)}</b></article><article><small>FREIGABEN</small><b>{data.summary.pending}</b></article>{data.accounts.map(a=><article key={a.id}><small>{a.name}</small><b>{money(a.balance_cents)}</b></article>)}</section><nav className="finance-tabs">{["Abrechnungen","Buchungsjournal","Budgets","Lohnmodelle","Konten"].map(x=><button className={tab===x?"active":""} key={x} onClick={()=>setTab(x)}>{x}</button>)}</nav>{message&&<p className="finance-message">{message}</p>}
-{tab==="Abrechnungen"&&<section className="finance-table"><h2>Fahrerabrechnungen</h2>{data.payrolls.map(p=><article key={p.id}><div><b>{p.driver} · {p.period}</b><span>Brutto {money(p.gross_cents)} · Abzüge {money(p.deductions_cents)} · Netto {money(p.net_cents)}</span></div><em>{p.status}</em>{p.status==="submitted"&&<button onClick={()=>act({action:"approvePayroll",id:p.id,data:{accountId:data.accounts[0]?.id}})}>Freigeben & auszahlen</button>}<details><summary>Positionen / Korrektur</summary>{data.lines.filter(l=>l.payroll_id===p.id).map(l=><p key={l.id}>{l.description}: {money(l.amount_cents)}</p>)}{p.status!=="paid"&&<form onSubmit={e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));act({action:"adjustPayroll",id:p.id,data:f})}}><input name="description" placeholder="Bonus oder Abzug"/><input name="amountCents" type="number" placeholder="Cent, negativ = Abzug" required/><button>Korrektur buchen</button></form>}</details></article>)}</section>}
-{tab==="Buchungsjournal"&&<section className="finance-split"><div className="finance-table"><h2>Buchungsjournal</h2>{data.entries.map(e=><article key={e.id}><div><b>{e.category} · {e.description}</b><span>{e.account_name} · {e.cost_center||"ohne Kostenstelle"} · {new Date(e.booked_at).toLocaleString("de-DE")}</span></div><strong className={e.amount_cents<0?"negative":"positive"}>{money(e.amount_cents)}</strong>{e.status==="posted"&&<button onClick={()=>act({action:"reverse",id:e.id})}>Storno</button>}</article>)}</div><EntryForm accounts={data.accounts} act={act}/></section>}
-{tab==="Budgets"&&<section className="finance-split"><div className="finance-table"><h2>Budgets & Kostenstellen</h2>{data.budgets.map(b=><article key={b.id}><div><b>{b.name} · {b.period}</b><span>{b.cost_center}</span></div><strong>{money(b.spent_cents)} / {money(b.limit_cents)}</strong></article>)}</div><form className="finance-form" onSubmit={e=>{e.preventDefault();act({action:"budget",data:Object.fromEntries(new FormData(e.currentTarget))})}}><h2>Budget festlegen</h2><label>Name<input name="name" required/></label><label>Kostenstelle<input name="costCenter" required/></label><label>Zeitraum<input name="period" type="month" required/></label><label>Limit Cent<input name="limitCents" type="number" required/></label><button>Budget speichern</button></form></section>}
-{tab==="Lohnmodelle"&&<section className="finance-split"><div className="finance-table"><h2>Lohnmodelle</h2>{data.models.map(m=><article key={m.id}><div><b>{m.name}</b><span>{m.cents_per_km} ct/km · {money(m.cents_per_job)} pro Auftrag · {money(m.base_salary_cents)} Grundlohn</span></div></article>)}</div><form className="finance-form" onSubmit={e=>{e.preventDefault();act({action:"model",data:Object.fromEntries(new FormData(e.currentTarget))})}}><h2>Modell erstellen</h2><label>Name<input name="name" required/></label><label>Monatsgrundlohn Cent<input name="baseSalaryCents" type="number"/></label><label>Cent pro km<input name="centsPerKm" type="number" defaultValue="45"/></label><label>Cent pro Auftrag<input name="centsPerJob" type="number" defaultValue="2500"/></label><label>Cent pro Stunde<input name="centsPerHour" type="number"/></label><label>Gewichtsfaktor<input name="weightFactor" type="number" step="0.001"/></label><label>Bonusregeln JSON<textarea name="bonusRules" defaultValue="{}"/></label><label>Abzugsregeln JSON<textarea name="deductionRules" defaultValue="{}"/></label><button>Lohnmodell speichern</button></form></section>}
-{tab==="Konten"&&<section className="finance-split"><div className="finance-table"><h2>Firmenkonten</h2>{data.accounts.map(a=><article key={a.id}><div><b>{a.name}</b><span>{a.type} · {a.currency}</span></div><strong>{money(a.balance_cents)}</strong></article>)}</div><form className="finance-form" onSubmit={e=>{e.preventDefault();act({action:"account",data:Object.fromEntries(new FormData(e.currentTarget))})}}><h2>Konto anlegen</h2><label>Name<input name="name" required/></label><label>Typ<select name="type"><option>operating</option><option>reserve</option><option>fleet</option><option>payroll</option></select></label><label>Währung<input name="currency" defaultValue="V€"/></label><label>Startsaldo Cent<input name="balanceCents" type="number"/></label><button>Konto anlegen</button></form></section>}</main>}
-function EntryForm({accounts,act}:{accounts:any[];act:(b:object)=>void}){return <form className="finance-form" onSubmit={e=>{e.preventDefault();act({action:"entry",data:Object.fromEntries(new FormData(e.currentTarget))})}}><h2>Buchung erfassen</h2><label>Konto<select name="accountId">{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>Betrag Cent<input name="amountCents" type="number" required/><small>Ausgabe mit Minuszeichen</small></label><label>Kategorie<select name="category">{["Auftragseinnahmen","Kraftstoff","Reparatur","Schaden","Strafgelder","Maut","Fähre","Zug","Fahrzeugkauf","Fahrzeugverkauf","Leasing","Wartung","Bonus","Gehälter","Sonstige"].map(x=><option key={x}>{x}</option>)}</select></label><label>Kostenstelle<input name="costCenter"/></label><label>Beschreibung<textarea name="description" required/></label><label>Buchungsdatum<input name="bookedAt" type="datetime-local"/></label><button>Buchung verbuchen</button></form>}
+import { useEffect, useState } from "react";
+type Data = {
+  vtc: { id: string; name: string; tag: string };
+  accounts: any[];
+  entries: any[];
+  budgets: any[];
+  models: any[];
+  payrolls: any[];
+  lines: any[];
+  summary: {
+    income: number;
+    expenses: number;
+    profit: number;
+    pending: number;
+  };
+};
+const money = (v: number) =>
+  `${(v / 100).toLocaleString("de-DE", { minimumFractionDigits: 2 })} V€`;
+export default function Finance() {
+  const [data, setData] = useState<Data | null>(null),
+    [tab, setTab] = useState("Abrechnungen"),
+    [message, setMessage] = useState("");
+  async function load() {
+    const r = await fetch("/api/v1/finance");
+    if (!r.ok) {
+      location.href = r.status === 401 ? "/konto" : "/dashboard";
+      return;
+    }
+    setData(await r.json());
+  }
+  useEffect(() => {
+    load();
+  }, []);
+  async function act(body: object) {
+    const r = await fetch("/api/v1/finance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vtcId: data?.vtc.id, ...body }),
+      }),
+      j = await r.json();
+    setMessage(r.ok ? "Finanzdaten wurden verbucht." : j.error);
+    if (r.ok) await load();
+  }
+  if (!data)
+    return <main className="finance-loading">Lohnbüro wird geladen …</main>;
+  return (
+    <main className="finance-page">
+      <header>
+        <div>
+          <span>{data.vtc.tag} · LOHNBÜRO</span>
+          <h1>{data.vtc.name} · Virtuelle Finanzen & Abrechnung</h1>
+        </div>
+        <nav>
+          <a href="/abrechnung">Meine Abrechnung</a>
+          <a href="/dashboard">Dashboard</a>
+        </nav>
+      </header>
+      <section className="finance-stats">
+        <article>
+          <small>EINNAHMEN</small>
+          <b>{money(data.summary.income)}</b>
+        </article>
+        <article>
+          <small>AUSGABEN</small>
+          <b>{money(data.summary.expenses)}</b>
+        </article>
+        <article>
+          <small>ERGEBNIS</small>
+          <b>{money(data.summary.profit)}</b>
+        </article>
+        <article>
+          <small>FREIGABEN</small>
+          <b>{data.summary.pending}</b>
+        </article>
+        {data.accounts.map((a) => (
+          <article key={a.id}>
+            <small>{a.name}</small>
+            <b>{money(a.balance_cents)}</b>
+          </article>
+        ))}
+      </section>
+      <nav className="finance-tabs">
+        {[
+          "Abrechnungen",
+          "Buchungsjournal",
+          "Budgets",
+          "Lohnmodelle",
+          "Konten",
+        ].map((x) => (
+          <button
+            className={tab === x ? "active" : ""}
+            key={x}
+            onClick={() => setTab(x)}
+          >
+            {x}
+          </button>
+        ))}
+      </nav>
+      {message && <p className="finance-message">{message}</p>}
+      {tab === "Abrechnungen" && (
+        <section className="finance-table">
+          <h2>Fahrerabrechnungen</h2>
+          {data.payrolls.map((p) => (
+            <article key={p.id}>
+              <div>
+                <b>
+                  {p.driver} · {p.period}
+                </b>
+                <span>
+                  Brutto {money(p.gross_cents)} · Abzüge{" "}
+                  {money(p.deductions_cents)} · Netto {money(p.net_cents)}
+                </span>
+              </div>
+              <em>{p.status}</em>
+              {p.status === "submitted" && (
+                <button
+                  onClick={() =>
+                    act({
+                      action: "approvePayroll",
+                      id: p.id,
+                      data: { accountId: data.accounts[0]?.id },
+                    })
+                  }
+                >
+                  Freigeben & auszahlen
+                </button>
+              )}
+              <details>
+                <summary>Positionen / Korrektur</summary>
+                {data.lines
+                  .filter((l) => l.payroll_id === p.id)
+                  .map((l) => (
+                    <p key={l.id}>
+                      {l.description}: {money(l.amount_cents)}
+                    </p>
+                  ))}
+                {p.status !== "paid" && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const f = Object.fromEntries(
+                        new FormData(e.currentTarget),
+                      );
+                      act({ action: "adjustPayroll", id: p.id, data: f });
+                    }}
+                  >
+                    <input name="description" placeholder="Bonus oder Abzug" />
+                    <input
+                      name="amountCents"
+                      type="number"
+                      placeholder="Cent, negativ = Abzug"
+                      required
+                    />
+                    <button>Korrektur buchen</button>
+                  </form>
+                )}
+              </details>
+            </article>
+          ))}
+        </section>
+      )}
+      {tab === "Buchungsjournal" && (
+        <section className="finance-split">
+          <div className="finance-table">
+            <h2>Buchungsjournal</h2>
+            {data.entries.map((e) => (
+              <article key={e.id}>
+                <div>
+                  <b>
+                    {e.category} · {e.description}
+                  </b>
+                  <span>
+                    {e.account_name} · {e.cost_center || "ohne Kostenstelle"} ·{" "}
+                    {new Date(e.booked_at).toLocaleString("de-DE")}
+                  </span>
+                </div>
+                <strong
+                  className={e.amount_cents < 0 ? "negative" : "positive"}
+                >
+                  {money(e.amount_cents)}
+                </strong>
+                {e.status === "posted" && (
+                  <button onClick={() => act({ action: "reverse", id: e.id })}>
+                    Storno
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+          <EntryForm accounts={data.accounts} act={act} />
+        </section>
+      )}
+      {tab === "Budgets" && (
+        <section className="finance-split">
+          <div className="finance-table">
+            <h2>Budgets & Kostenstellen</h2>
+            {data.budgets.map((b) => (
+              <article key={b.id}>
+                <div>
+                  <b>
+                    {b.name} · {b.period}
+                  </b>
+                  <span>{b.cost_center}</span>
+                </div>
+                <strong>
+                  {money(b.spent_cents)} / {money(b.limit_cents)}
+                </strong>
+              </article>
+            ))}
+          </div>
+          <form
+            className="finance-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              act({
+                action: "budget",
+                data: Object.fromEntries(new FormData(e.currentTarget)),
+              });
+            }}
+          >
+            <h2>Budget festlegen</h2>
+            <label>
+              Name
+              <input name="name" required />
+            </label>
+            <label>
+              Kostenstelle
+              <input name="costCenter" required />
+            </label>
+            <label>
+              Zeitraum
+              <input name="period" type="month" required />
+            </label>
+            <label>
+              Limit Cent
+              <input name="limitCents" type="number" required />
+            </label>
+            <button>Budget speichern</button>
+          </form>
+        </section>
+      )}
+      {tab === "Lohnmodelle" && (
+        <section className="finance-split">
+          <div className="finance-table">
+            <h2>Lohnmodelle</h2>
+            {data.models.map((m) => (
+              <article key={m.id}>
+                <div>
+                  <b>{m.name}</b>
+                  <span>
+                    {m.cents_per_km} ct/km · {money(m.cents_per_job)} pro
+                    Auftrag · {money(m.base_salary_cents)} Grundlohn
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+          <form
+            className="finance-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              act({
+                action: "model",
+                data: Object.fromEntries(new FormData(e.currentTarget)),
+              });
+            }}
+          >
+            <h2>Modell erstellen</h2>
+            <label>
+              Name
+              <input name="name" required />
+            </label>
+            <label>
+              Monatsgrundlohn Cent
+              <input name="baseSalaryCents" type="number" />
+            </label>
+            <label>
+              Cent pro km
+              <input name="centsPerKm" type="number" defaultValue="45" />
+            </label>
+            <label>
+              Cent pro Auftrag
+              <input name="centsPerJob" type="number" defaultValue="2500" />
+            </label>
+            <label>
+              Cent pro Stunde
+              <input name="centsPerHour" type="number" />
+            </label>
+            <label>
+              Gewichtsfaktor
+              <input name="weightFactor" type="number" step="0.001" />
+            </label>
+            <label>
+              Bonusregeln JSON
+              <textarea name="bonusRules" defaultValue="{}" />
+            </label>
+            <label>
+              Abzugsregeln JSON
+              <textarea name="deductionRules" defaultValue="{}" />
+            </label>
+            <button>Lohnmodell speichern</button>
+          </form>
+        </section>
+      )}
+      {tab === "Konten" && (
+        <section className="finance-split">
+          <div className="finance-table">
+            <h2>Firmenkonten</h2>
+            {data.accounts.map((a) => (
+              <article key={a.id}>
+                <div>
+                  <b>{a.name}</b>
+                  <span>
+                    {a.type} · {a.currency}
+                  </span>
+                </div>
+                <strong>{money(a.balance_cents)}</strong>
+              </article>
+            ))}
+          </div>
+          <form
+            className="finance-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              act({
+                action: "account",
+                data: Object.fromEntries(new FormData(e.currentTarget)),
+              });
+            }}
+          >
+            <h2>Konto anlegen</h2>
+            <label>
+              Name
+              <input name="name" required />
+            </label>
+            <label>
+              Typ
+              <select name="type">
+                <option>operating</option>
+                <option>reserve</option>
+                <option>fleet</option>
+                <option>payroll</option>
+              </select>
+            </label>
+            <label>
+              Währung
+              <input name="currency" defaultValue="V€" />
+            </label>
+            <label>
+              Startsaldo Cent
+              <input name="balanceCents" type="number" />
+            </label>
+            <button>Konto anlegen</button>
+          </form>
+        </section>
+      )}
+    </main>
+  );
+}
+function EntryForm({
+  accounts,
+  act,
+}: {
+  accounts: any[];
+  act: (b: object) => void;
+}) {
+  return (
+    <form
+      className="finance-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        act({
+          action: "entry",
+          data: Object.fromEntries(new FormData(e.currentTarget)),
+        });
+      }}
+    >
+      <h2>Buchung erfassen</h2>
+      <label>
+        Konto
+        <select name="accountId">
+          {accounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Betrag Cent
+        <input name="amountCents" type="number" required />
+        <small>Ausgabe mit Minuszeichen</small>
+      </label>
+      <label>
+        Kategorie
+        <select name="category">
+          {[
+            "Auftragseinnahmen",
+            "Kraftstoff",
+            "Reparatur",
+            "Schaden",
+            "Strafgelder",
+            "Maut",
+            "Fähre",
+            "Zug",
+            "Fahrzeugkauf",
+            "Fahrzeugverkauf",
+            "Leasing",
+            "Wartung",
+            "Bonus",
+            "Gehälter",
+            "Sonstige",
+          ].map((x) => (
+            <option key={x}>{x}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Kostenstelle
+        <input name="costCenter" />
+      </label>
+      <label>
+        Beschreibung
+        <textarea name="description" required />
+      </label>
+      <label>
+        Buchungsdatum
+        <input name="bookedAt" type="datetime-local" />
+      </label>
+      <button>Buchung verbuchen</button>
+    </form>
+  );
+}

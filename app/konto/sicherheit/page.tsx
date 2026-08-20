@@ -44,7 +44,7 @@ export default function Security() {
       url = URL.createObjectURL(blob),
       a = document.createElement("a");
     a.href = url;
-    a.download = "convoyhub-kontoexport.json";
+    a.download = "vtc-truck-hub-kontoexport.json";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -63,6 +63,15 @@ export default function Security() {
       </header>
       {message && <p className="manage-message">{message}</p>}
       <div className="security-grid">
+        <section id="passwort">
+          <h2>Passwort ändern</h2>
+          <form onSubmit={(e)=>{e.preventDefault();act({action:"changePassword",...Object.fromEntries(new FormData(e.currentTarget))});e.currentTarget.reset()}}>
+            <label>Aktuelles Passwort<input name="currentPassword" type="password" autoComplete="current-password" required /></label>
+            <label>Neues Passwort<input name="newPassword" type="password" minLength={10} autoComplete="new-password" required /></label>
+            <label>Neues Passwort wiederholen<input name="confirmPassword" type="password" minLength={10} autoComplete="new-password" required /></label>
+            <button>Passwort sicher ändern</button>
+          </form>
+        </section>
         <section>
           <h2>E-Mail-Bestätigung</h2>
           <p>
