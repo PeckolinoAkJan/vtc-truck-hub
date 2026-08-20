@@ -55,7 +55,8 @@ type IncidentRow = {
 };
 
 async function authorized(request: Request) {
-  const configured = platformEnv().TELEMETRY_API_KEY,
+  const configuredValue = platformEnv().TELEMETRY_API_KEY?.trim(),
+    configured = configuredValue && configuredValue !== "demo-client-key" ? configuredValue : undefined,
     supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!supplied) return null;
   if (configured && supplied === configured) return { vtcId: null, keyId: null };
