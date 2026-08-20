@@ -1,0 +1,4 @@
+LIBRARY convoyhub_scs
+EXPORTS
+  scs_telemetry_init
+  scs_telemetry_shutdown

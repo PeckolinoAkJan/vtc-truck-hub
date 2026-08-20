@@ -1,0 +1,1 @@
+{"name":"convoyhub-discord-bot","version":"1.0.0","private":true,"type":"module","scripts":{"start":"node src/index.mjs","register":"node src/register-commands.mjs"},"engines":{"node":">=22"}}

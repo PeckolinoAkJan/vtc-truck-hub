@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.20)
+project(ConvoyHubScsPlugin LANGUAGES CXX)
+add_library(convoyhub_scs SHARED convoyhub_plugin.cpp convoyhub_scs.def)
+target_compile_features(convoyhub_scs PRIVATE cxx_std_17)
+target_include_directories(convoyhub_scs PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../scs-sdk/include")
+target_compile_definitions(convoyhub_scs PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(convoyhub_scs PRIVATE ws2_32)
+set_target_properties(convoyhub_scs PROPERTIES OUTPUT_NAME "convoyhub_scs" PREFIX "")
