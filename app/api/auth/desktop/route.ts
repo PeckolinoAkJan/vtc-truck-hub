@@ -1,4 +1,5 @@
-import { ensureDatabase, platformEnv, randomId } from "@/lib/platform";
+import { ensureDatabase, platformEnv, publicRequestOrigin, randomId } from "@/lib/platform";
+import {issuePersonalClientKey} from "@/lib/client-access";
 
 const allowed = new Set(["google", "steam", "discord"]);
 
@@ -10,7 +11,7 @@ export async function POST(request: Request) {
   const token = `${randomId()}${randomId()}`;
   const expires = new Date(Date.now() + 10 * 60_000).toISOString();
   await platformEnv().DB.prepare(`INSERT INTO desktop_auth_requests (token,provider,expires_at) VALUES (?,?,?)`).bind(token, provider, expires).run();
-  const origin = new URL(request.url).origin;
+  const origin = publicRequestOrigin(request);
   return Response.json({ token, expiresAt: expires, verificationUrl: `${origin}/api/auth/desktop/authorize?provider=${provider}&token=${encodeURIComponent(token)}` });
 }
 
@@ -23,7 +24,12 @@ export async function GET(request: Request) {
   if (!row || new Date(row.expiresAt).getTime() < Date.now()) return Response.json({ status: "expired" }, { status: 410 });
   if (row.consumedAt) return Response.json({ status: "consumed" }, { status: 410 });
   if (row.status !== "approved" || !row.id) return Response.json({ status: "pending", expiresAt: row.expiresAt });
-  const memberships=await db.prepare(`SELECT v.id,v.name,v.tag,r.name AS roleName FROM memberships m JOIN vtcs v ON v.id=m.vtc_id LEFT JOIN roles r ON r.id=m.role_id WHERE m.user_id=? AND m.status='active' ORDER BY r.rank DESC,v.name`).bind(row.id).all();
+  const memberships=await db.prepare(`SELECT v.id,v.name,v.tag,r.name AS roleName FROM memberships m JOIN vtcs v ON v.id=m.vtc_id LEFT JOIN roles r ON r.id=m.role_id WHERE m.user_id=? AND m.status='active' ORDER BY r.rank DESC,v.name`).bind(row.id).all<{id:string;name:string;tag:string;roleName:string|null}>();
+  const boundMemberships=[];
+  for(const membership of memberships.results){
+    const issued=await issuePersonalClientKey(row.id,membership.id);
+    boundMemberships.push({...membership,clientKey:issued.key,keyPrefix:issued.prefix});
+  }
   await db.prepare(`UPDATE desktop_auth_requests SET consumed_at=CURRENT_TIMESTAMP WHERE token=? AND consumed_at IS NULL`).bind(token).run();
-  return Response.json({ status: "approved", user: { id: row.id, displayName: row.displayName, email: row.email },memberships:memberships.results,apiBase:new URL(request.url).origin });
+  return Response.json({ status: "approved", user: { id: row.id, displayName: row.displayName, email: row.email },memberships:boundMemberships,apiBase:publicRequestOrigin(request) });
 }

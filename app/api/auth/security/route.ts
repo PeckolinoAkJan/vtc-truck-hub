@@ -5,6 +5,7 @@ import {
   getSessionUser,
   hashPassword,
   platformEnv,
+  publicRequestOrigin,
   randomBase32,
   randomId,
   sha256,
@@ -119,7 +120,7 @@ export async function POST(request: Request) {
         expires = new Date(
           Date.now() + (type === "password_reset" ? 3600e3 : 86400e3),
         ).toISOString(),
-        link = `${new URL(request.url).origin}/konto/passwort?token=${raw}&type=${type}`;
+        link = `${publicRequestOrigin(request)}/konto/passwort?token=${raw}&type=${type}`;
       await db.batch([
         db
           .prepare(

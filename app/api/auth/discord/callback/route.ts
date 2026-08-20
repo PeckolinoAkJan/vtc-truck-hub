@@ -1,4 +1,4 @@
-import { audit, createSession, ensureDatabase, platformEnv, randomId } from "@/lib/platform";
+import { audit, createSession, ensureDatabase, platformEnv, publicRequestOrigin, randomId } from "@/lib/platform";
 
 export async function GET(request: Request) {
   await ensureDatabase();
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   if (!cfg.DISCORD_CLIENT_ID || !cfg.DISCORD_CLIENT_SECRET) {
     return Response.json({ error: "Discord ist nicht konfiguriert" }, { status: 503 });
   }
-  const redirect = `${url.origin}/api/auth/discord/callback`;
+  const redirect = `${publicRequestOrigin(request)}/api/auth/discord/callback`;
   const tokenRes = await fetch("https://discord.com/api/v10/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

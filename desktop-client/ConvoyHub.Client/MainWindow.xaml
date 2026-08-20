@@ -1,31 +1,556 @@
+<?xml version="1.0" encoding="utf-8"?>
 <Window x:Class="ConvoyHub.Client.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="VTC Truck Hub Client" Width="1280" Height="820" MinWidth="1080" MinHeight="700" Background="{StaticResource Bg}" Foreground="{StaticResource Text}" WindowStartupLocation="CenterScreen" Closing="Window_Closing">
-<Window.Resources><Style x:Key="PanelCard" TargetType="Border"><Setter Property="Background" Value="#0E202C"/><Setter Property="BorderBrush" Value="#263C48"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="20"/></Style><Style x:Key="MetricCard" TargetType="Border"><Setter Property="Background" Value="#0D202B"/><Setter Property="BorderBrush" Value="#263C48"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="16"/></Style><Style x:Key="MetricLabel" TargetType="TextBlock"><Setter Property="Foreground" Value="#758893"/><Setter Property="FontSize" Value="8"/><Setter Property="FontWeight" Value="Bold"/></Style><Style x:Key="MetricValue" TargetType="TextBlock"><Setter Property="FontSize" Value="22"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="Margin" Value="0,8,0,4"/></Style><Style x:Key="MetricSub" TargetType="TextBlock"><Setter Property="Foreground" Value="#687B86"/><Setter Property="FontSize" Value="8"/></Style><Style x:Key="CardTitle" TargetType="TextBlock"><Setter Property="FontSize" Value="11"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="Foreground" Value="#E8F0F2"/></Style><Style x:Key="FieldLabel" TargetType="TextBlock"><Setter Property="Foreground" Value="#748690"/><Setter Property="FontSize" Value="8"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="Margin" Value="0,0,0,5"/></Style><Style x:Key="TelemetryItem" TargetType="StackPanel"><Setter Property="Margin" Value="0,0,10,22"/></Style></Window.Resources>
-<Grid><Grid.ColumnDefinitions><ColumnDefinition Width="220"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-<Border Grid.Column="0" Background="#091722" BorderBrush="#253845" BorderThickness="0,0,1,0"><Grid Margin="14,22"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-<StackPanel Orientation="Horizontal" Margin="7,0,0,24"><Border Width="38" Height="38" BorderBrush="{StaticResource Teal}" BorderThickness="2" CornerRadius="8"><TextBlock Text="VH" Foreground="{StaticResource Teal}" FontWeight="Black" VerticalAlignment="Center" HorizontalAlignment="Center"/></Border><StackPanel Margin="10,0,0,0" VerticalAlignment="Center"><TextBlock FontSize="15" FontWeight="Black"><Run Text="VTC TRUCK "/><Run Text="HUB" Foreground="{StaticResource Teal}"/></TextBlock><TextBlock Text="ETS2 · ATS TELEMETRY" Foreground="{StaticResource Muted}" FontSize="7" Margin="0,2,0,0"/></StackPanel></StackPanel>
-<Border Grid.Row="1" Background="#0E2330" BorderBrush="#2A404C" BorderThickness="1" Padding="10" Margin="0,0,0,18"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="34"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Border Width="32" Height="32" Background="#183847"><TextBlock Text="NGL" Foreground="{StaticResource Teal}" FontSize="9" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><StackPanel Grid.Column="1" Margin="9,0"><TextBlock Text="Nordlicht Logistik" FontSize="10" FontWeight="Bold"/><TextBlock Text="Aktive Spedition" Foreground="{StaticResource Muted}" FontSize="8" Margin="0,3,0,0"/></StackPanel><TextBlock Grid.Column="2" Text="⌄" Foreground="{StaticResource Muted}" VerticalAlignment="Center"/></Grid></Border>
-<StackPanel Grid.Row="2"><Button x:Name="NavOverview" Content="⌂   Übersicht" Style="{StaticResource NavButton}" Tag="active" Click="Nav_Click" CommandParameter="0"/><Button x:Name="NavTelemetry" Content="◉   Live-Telemetrie" Style="{StaticResource NavButton}" Click="Nav_Click" CommandParameter="1"/><Button x:Name="NavTrip" Content="▰   Aktive Fahrt" Style="{StaticResource NavButton}" Click="Nav_Click" CommandParameter="2"/><Button x:Name="NavPlugin" Content="⚙   Spiele &amp; Plugin" Style="{StaticResource NavButton}" Click="Nav_Click" CommandParameter="3"/><Button x:Name="NavLogs" Content="≣   Diagnose &amp; Logs" Style="{StaticResource NavButton}" Click="Nav_Click" CommandParameter="4"/><Button x:Name="NavSettings" Content="◫   Einstellungen" Style="{StaticResource NavButton}" Click="Nav_Click" CommandParameter="5"/></StackPanel>
-<StackPanel Grid.Row="3"><Border Height="1" Background="#263945" Margin="0,0,0,12"/><TextBlock x:Name="VersionText" Text="CLIENT v1.0.0" Foreground="#5F7480" FontSize="8" Margin="10,0"/><TextBlock Text="SCS TELEMETRY SDK 1.14" Foreground="#5F7480" FontSize="8" Margin="10,4,0,0"/></StackPanel></Grid></Border>
-
-<Grid Grid.Column="1"><Grid.RowDefinitions><RowDefinition Height="76"/><RowDefinition Height="*"/></Grid.RowDefinitions><Border Background="#0B1A25" BorderBrush="#253845" BorderThickness="0,0,0,1"><Grid Margin="30,0"><StackPanel VerticalAlignment="Center"><TextBlock x:Name="HeaderEyebrow" Text="DESKTOP-CLIENT" Foreground="{StaticResource Teal}" FontSize="9" FontWeight="Bold"/><TextBlock x:Name="HeaderTitle" Text="Übersicht" FontSize="22" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel><StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"><Border Background="#102D35" BorderBrush="#1E5A55" BorderThickness="1" Padding="10,7" Margin="0,0,10,0"><StackPanel Orientation="Horizontal"><Ellipse x:Name="ConnectionDot" Width="7" Height="7" Fill="{StaticResource Teal}" Margin="0,0,8,0"/><TextBlock x:Name="ConnectionText" Text="SERVER VERBUNDEN" FontSize="8" FontWeight="Bold"/></StackPanel></Border><Border Background="#10202C" BorderBrush="#2A404C" BorderThickness="1" Padding="10,7"><StackPanel Orientation="Horizontal"><TextBlock x:Name="GameStatusText" Text="KEIN SPIEL ERKANNT" Foreground="{StaticResource Muted}" FontSize="8" FontWeight="Bold"/><Ellipse x:Name="GameDot" Width="7" Height="7" Fill="#52656F" Margin="8,0,0,0"/></StackPanel></Border></StackPanel></Grid></Border>
-
-<TabControl x:Name="Pages" Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="0"><TabControl.Resources><Style TargetType="TabItem"><Setter Property="Visibility" Value="Collapsed"/></Style></TabControl.Resources>
-<TabItem><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="30,26,30,40">
-<Border Background="#0F2632" BorderBrush="#21404B" BorderThickness="1" CornerRadius="14" ClipToBounds="True" Margin="0,0,0,16"><Grid Height="220"><Image Source="Assets/vtc-truck-hub-login.png" Stretch="UniformToFill" Opacity="0.74"/><Border><Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,0"><GradientStop Color="#F207151F" Offset="0"/><GradientStop Color="#E808151F" Offset="0.5"/><GradientStop Color="#3208151F" Offset="1"/></LinearGradientBrush></Border.Background></Border><Grid Margin="28"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel VerticalAlignment="Center"><StackPanel Orientation="Horizontal"><Border Background="#142DD6C8" BorderBrush="#4F22D3C5" BorderThickness="1" CornerRadius="9" Padding="10,5" Margin="0,0,8,0"><TextBlock Text="EURO TRUCK SIMULATOR 2" Foreground="#E8FFFF" FontSize="8" FontWeight="Bold"/></Border><Border Background="#14F3A84F" BorderBrush="#6AF3A84F" BorderThickness="1" CornerRadius="9" Padding="10,5"><TextBlock Text="AMERICAN TRUCK SIMULATOR" Foreground="#FFF2DF" FontSize="8" FontWeight="Bold"/></Border></StackPanel><TextBlock Text="Deine Straße. Deine Daten." FontSize="31" FontWeight="Black" Margin="0,14,0,6"/><TextBlock Text="VTC Truck Hub erkennt ETS2 und ATS, bewahrt laufende Aufträge und synchronisiert deine Telemetrie." Foreground="#C7D3D8" FontSize="11" TextWrapping="Wrap" MaxWidth="620"/></StackPanel><StackPanel Grid.Column="1" VerticalAlignment="Bottom" Orientation="Horizontal"><Button Content="ETS2 STARTEN" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Click="StartEts2_Click"/><Button Content="ATS STARTEN" Style="{StaticResource SecondaryButton}" Click="StartAts_Click"/></StackPanel></Grid></Grid></Border>
-<Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><Border Style="{StaticResource MetricCard}"><StackPanel><TextBlock Text="SPIEL" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="MetricGame" Text="OFFLINE" Style="{StaticResource MetricValue}"/><TextBlock Text="Automatische Erkennung" Style="{StaticResource MetricSub}"/></StackPanel></Border><Border Grid.Column="1" Style="{StaticResource MetricCard}" Margin="10,0,0,0"><StackPanel><TextBlock Text="TELEMETRIE" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="MetricPackets" Text="0" Style="{StaticResource MetricValue}"/><TextBlock Text="Pakete empfangen" Style="{StaticResource MetricSub}"/></StackPanel></Border><Border Grid.Column="2" Style="{StaticResource MetricCard}" Margin="10,0,0,0"><StackPanel><TextBlock Text="SYNCHRONISIERUNG" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="MetricSynced" Text="0" Style="{StaticResource MetricValue}"/><TextBlock Text="Pakete übertragen" Style="{StaticResource MetricSub}"/></StackPanel></Border><Border Grid.Column="3" Style="{StaticResource MetricCard}" Margin="10,0,0,0"><StackPanel><TextBlock Text="OFFLINE-PUFFER" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="MetricQueued" Text="0" Style="{StaticResource MetricValue}"/><TextBlock Text="Warten auf Verbindung" Style="{StaticResource MetricSub}"/></StackPanel></Border></Grid>
-<Grid><Grid.ColumnDefinitions><ColumnDefinition Width="1.55*"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions><Border Style="{StaticResource PanelCard}" Margin="0,0,8,0" CornerRadius="12"><StackPanel><TextBlock Text="KONTO &amp; SPEDITION" Style="{StaticResource CardTitle}"/><TextBlock x:Name="AccountState" Text="Wähle eine sichere Anmeldeart" Foreground="{StaticResource Muted}" Margin="0,5,0,14"/><UniformGrid Columns="3" Margin="0,0,0,14"><Button Content="G  GOOGLE" Background="#FFFFFF" Foreground="#24344A" Padding="12,10" Margin="0,0,6,0" Click="OAuthLogin_Click" Tag="google"/><Button Content="●  STEAM" Background="#173A55" Foreground="White" Padding="12,10" Margin="3,0" Click="OAuthLogin_Click" Tag="steam"/><Button Content="◉  DISCORD" Background="#5865F2" Foreground="White" Padding="12,10" Margin="6,0,0,0" Click="OAuthLogin_Click" Tag="discord"/></UniformGrid><Border Height="1" Background="#263C48" Margin="0,0,0,13"/><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel Margin="0,0,5,0"><TextBlock Text="E-MAIL" Style="{StaticResource FieldLabel}"/><TextBox x:Name="EmailBox" ToolTip="E-Mail-Adresse deines VTC-Truck-Hub-Kontos"/></StackPanel><StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="PASSWORT" Style="{StaticResource FieldLabel}"/><PasswordBox x:Name="PasswordInput" ToolTip="Dein persönliches Passwort"/></StackPanel></Grid><StackPanel Orientation="Horizontal" Margin="0,12,0,0"><Button Content="NORMAL ANMELDEN" Style="{StaticResource PrimaryButton}" Click="Login_Click"/><ComboBox x:Name="VtcCombo" Width="220" Margin="10,0,0,0" SelectedIndex="0" ToolTip="Deine Speditionen werden nach der Anmeldung automatisch geladen"/></StackPanel></StackPanel></Border>
-<Border Grid.Column="1" Style="{StaticResource PanelCard}" Margin="8,0,0,0"><StackPanel><TextBlock Text="SYSTEMSTATUS" Style="{StaticResource CardTitle}"/><Grid Margin="0,15,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="SCS Telemetrie-Plugin" Foreground="{StaticResource Muted}" FontSize="10"/><TextBlock Text="API-Verbindung" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,14,0,0"/><TextBlock Text="Client-Update" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,14,0,0"/></StackPanel><StackPanel Grid.Column="1"><TextBlock x:Name="PluginQuickState" Text="PRÜFEN" Foreground="#E8A45A" FontSize="9" FontWeight="Bold" HorizontalAlignment="Right"/><TextBlock x:Name="ApiQuickState" Text="VERBUNDEN" Foreground="{StaticResource Teal}" FontSize="9" FontWeight="Bold" Margin="0,14,0,0" HorizontalAlignment="Right"/><TextBlock x:Name="UpdateQuickState" Text="PRÜFUNG …" Foreground="#E8A45A" FontSize="9" FontWeight="Bold" Margin="0,14,0,0" HorizontalAlignment="Right"/></StackPanel></Grid><StackPanel Orientation="Horizontal" Margin="0,18,0,0"><Button Content="VOLLSTÄNDIGE DIAGNOSE →" Style="{StaticResource SecondaryButton}" Click="OpenDiagnostics_Click"/><Button Content="NACH UPDATE SUCHEN" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="CheckUpdate_Click"/></StackPanel></StackPanel></Border></Grid></StackPanel></ScrollViewer></TabItem>
-
-<TabItem><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="30,26"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition/></Grid.ColumnDefinitions><Border Style="{StaticResource PanelCard}" Margin="0,0,8,0"><StackPanel><TextBlock Text="FAHRZEUG LIVE" Style="{StaticResource CardTitle}"/><Grid Margin="0,20,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="GESCHWINDIGKEIT" Style="{StaticResource MetricLabel}"/><TextBlock><Run x:Name="SpeedRun" Text="0" FontSize="46" FontWeight="Bold"/><Run Text=" km/h" Foreground="{StaticResource Muted}"/></TextBlock></StackPanel><StackPanel Grid.Column="1"><TextBlock Text="MOTORDREHZAHL" Style="{StaticResource MetricLabel}"/><TextBlock><Run x:Name="RpmRun" Text="0" FontSize="34" FontWeight="Bold"/><Run Text=" rpm" Foreground="{StaticResource Muted}"/></TextBlock></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="GANG" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="GearText" Text="N" FontSize="34" FontWeight="Bold"/></StackPanel></Grid><Border x:Name="SpeedWarningPanel" Background="#132936" BorderBrush="#2A414D" BorderThickness="1" Padding="12" Margin="0,18,0,0"><Grid><StackPanel><TextBlock x:Name="SpeedWarningText" Text="SICHERE FAHRT" Foreground="{StaticResource Teal}" FontSize="10" FontWeight="Bold"/><TextBlock x:Name="SpeedWarningDetail" Text="Ab 95 km/h beginnt die Punkteerfassung." Foreground="{StaticResource Muted}" FontSize="9" Margin="0,4,0,0"/></StackPanel><TextBlock x:Name="PointCounterText" Text="0 PUNKTE" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="16" FontWeight="Bold"/></Grid></Border></StackPanel></Border><Border Grid.Column="1" Style="{StaticResource PanelCard}" Margin="8,0,0,0"><StackPanel><TextBlock Text="POSITION" Style="{StaticResource CardTitle}"/><TextBlock x:Name="PositionText" Text="X 0,0  ·  Y 0,0  ·  Z 0,0" FontSize="14" FontWeight="Bold" Margin="0,18,0,0"/><TextBlock x:Name="HeadingText" Text="Fahrtrichtung 0°" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,8,0,0"/><TextBlock x:Name="PacketTimeText" Text="Noch kein Signal" Foreground="{StaticResource Teal}" FontSize="9" Margin="0,16,0,0"/></StackPanel></Border></Grid>
-<Border Style="{StaticResource PanelCard}" Margin="0,16,0,0"><StackPanel><TextBlock Text="KOMPLETTE SCS-TELEMETRIE" Style="{StaticResource CardTitle}"/><UniformGrid Columns="4" Margin="0,18,0,0"><StackPanel Style="{StaticResource TelemetryItem}"><TextBlock Text="Kraftstoff" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="FuelText" Text="0,0 l" FontSize="18" FontWeight="Bold"/></StackPanel><StackPanel Style="{StaticResource TelemetryItem}"><TextBlock Text="Verbrauch" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="ConsumptionText" Text="0,0 l/100 km" FontSize="18" FontWeight="Bold"/></StackPanel><StackPanel Style="{StaticResource TelemetryItem}"><TextBlock Text="Tempomat" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="CruiseText" Text="Aus" FontSize="18" FontWeight="Bold"/></StackPanel><StackPanel Style="{StaticResource TelemetryItem}"><TextBlock Text="Navigation" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="NavDistanceText" Text="0 km" FontSize="18" FontWeight="Bold"/></StackPanel><StackPanel Style="{StaticResource TelemetryItem}"><TextBlock Text="Motor" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="EngineText" Text="Aus" FontSize="18" FontWeight="Bold"/></StackPanel><StackPanel Style="{StaticResource TelemetryItem}"><TextBlock Text="Schaden LKW" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="TruckDamageText" Text="0,0 %" FontSize="18" FontWeight="Bold"/></StackPanel><StackPanel Style="{StaticResource TelemetryItem}"><TextBlock Text="Schaden Auflieger" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="TrailerDamageText" Text="0,0 %" FontSize="18" FontWeight="Bold"/></StackPanel><StackPanel Style="{StaticResource TelemetryItem}"><TextBlock Text="Spielzeit" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="GameTimeText" Text="00:00" FontSize="18" FontWeight="Bold"/></StackPanel></UniformGrid></StackPanel></Border>
-<Border Style="{StaticResource PanelCard}" Margin="0,16,0,0"><StackPanel><TextBlock Text="AKTUELLER AUFTRAG" Style="{StaticResource CardTitle}"/><Grid Margin="0,16,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="FRACHT" Style="{StaticResource FieldLabel}"/><TextBlock x:Name="CargoText" Text="Kein Auftrag" FontWeight="Bold"/></StackPanel><StackPanel Grid.Column="1"><TextBlock Text="START" Style="{StaticResource FieldLabel}"/><TextBlock x:Name="SourceText" Text="—" FontWeight="Bold"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="ZIEL" Style="{StaticResource FieldLabel}"/><TextBlock x:Name="DestinationText" Text="—" FontWeight="Bold"/></StackPanel><StackPanel Grid.Column="3"><TextBlock Text="FRACHTGEWICHT" Style="{StaticResource FieldLabel}"/><TextBlock x:Name="CargoMassText" Text="0 t" FontWeight="Bold"/></StackPanel></Grid></StackPanel></Border></StackPanel></ScrollViewer></TabItem>
-
-<TabItem><ScrollViewer><StackPanel Margin="30,26"><Border Style="{StaticResource PanelCard}"><StackPanel><TextBlock Text="FAHRTENSTEUERUNG" Style="{StaticResource CardTitle}"/><TextBlock x:Name="TripStatusText" Text="Keine aktive Fahrt" FontSize="26" FontWeight="Bold" Margin="0,14,0,4"/><TextBlock x:Name="TripIdText" Text="Der Client startet automatisch eine Fahrt, sobald das Spiel einen Auftrag meldet." Foreground="{StaticResource Muted}"/><StackPanel Orientation="Horizontal" Margin="0,24,0,0"><Button Content="FAHRT STARTEN" Style="{StaticResource PrimaryButton}" Click="TripStart_Click"/><Button Content="PAUSIEREN" Style="{StaticResource SecondaryButton}" Margin="8,0" Click="TripPause_Click"/><Button Content="FORTSETZEN" Style="{StaticResource SecondaryButton}" Click="TripResume_Click"/><Button Content="ABSCHLIESSEN" Style="{StaticResource SecondaryButton}" Margin="8,0" Click="TripComplete_Click"/><Button Content="ABBRECHEN" Background="#562D30" Foreground="#FFB4B4" Padding="16,10" Click="TripAbort_Click"/></StackPanel></StackPanel></Border><Grid Margin="0,16,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><Border Style="{StaticResource PanelCard}" Margin="0,0,8,0"><StackPanel><TextBlock Text="FAHRTDATEN" Style="{StaticResource CardTitle}"/><TextBlock x:Name="TripRouteText" Text="— → —" FontSize="20" FontWeight="Bold" Margin="0,16,0,0"/><TextBlock x:Name="TripCargoText" Text="Keine Fracht" Foreground="{StaticResource Muted}" Margin="0,7,0,0"/><TextBlock x:Name="TripDistanceText" Text="0 km erfasst" Foreground="{StaticResource Teal}" Margin="0,18,0,0"/></StackPanel></Border><Border Grid.Column="1" Style="{StaticResource PanelCard}" Margin="8,0,0,0"><StackPanel><TextBlock Text="PRÜFSTATUS" Style="{StaticResource CardTitle}"/><TextBlock x:Name="AnomalyText" Text="Keine Auffälligkeiten" Foreground="{StaticResource Teal}" FontSize="15" FontWeight="Bold" Margin="0,16,0,0"/><TextBlock Text="Geschwindigkeit, Positionssprünge, Zeitmanipulation, Schäden und doppelte Pakete werden automatisch markiert." Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/></StackPanel></Border></Grid></StackPanel></ScrollViewer></TabItem>
-
-<TabItem><ScrollViewer><StackPanel Margin="30,26"><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><Border Style="{StaticResource PanelCard}" Margin="0,0,8,0"><StackPanel><TextBlock Text="EURO TRUCK SIMULATOR 2" Style="{StaticResource CardTitle}"/><TextBlock x:Name="EtsPathText" Text="Suche Installation …" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/><TextBlock x:Name="EtsPluginText" Text="Pluginstatus unbekannt" FontWeight="Bold"/><StackPanel Orientation="Horizontal" Margin="0,16,0,0"><Button Content="PLUGIN INSTALLIEREN / REPARIEREN" Style="{StaticResource PrimaryButton}" Click="InstallPlugin_Click" Tag="ETS2"/><Button Content="SPIEL STARTEN" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="StartEts2_Click"/></StackPanel></StackPanel></Border><Border Grid.Column="1" Style="{StaticResource PanelCard}" Margin="8,0,0,0"><StackPanel><TextBlock Text="AMERICAN TRUCK SIMULATOR" Style="{StaticResource CardTitle}"/><TextBlock x:Name="AtsPathText" Text="Suche Installation …" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/><TextBlock x:Name="AtsPluginText" Text="Pluginstatus unbekannt" FontWeight="Bold"/><StackPanel Orientation="Horizontal" Margin="0,16,0,0"><Button Content="PLUGIN INSTALLIEREN / REPARIEREN" Style="{StaticResource PrimaryButton}" Click="InstallPlugin_Click" Tag="ATS"/><Button Content="SPIEL STARTEN" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="StartAts_Click"/></StackPanel></StackPanel></Border></Grid><Border Style="{StaticResource PanelCard}" Margin="0,16,0,0"><StackPanel><TextBlock Text="TELEMETRIE-BRIDGE" Style="{StaticResource CardTitle}"/><Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="SDK-VERSION" Style="{StaticResource MetricLabel}"/><TextBlock Text="SCS 1.14" FontSize="18" FontWeight="Bold"/></StackPanel><StackPanel Grid.Column="1"><TextBlock Text="LOKALER PORT" Style="{StaticResource MetricLabel}"/><TextBlock Text="127.0.0.1:35055" FontSize="18" FontWeight="Bold"/></StackPanel><StackPanel Grid.Column="2"><TextBlock Text="PLUGIN-DATEI" Style="{StaticResource MetricLabel}"/><TextBlock x:Name="BridgeFileText" Text="convoyhub_scs.dll" FontSize="18" FontWeight="Bold"/></StackPanel></Grid><Button Content="ERNEUT PRÜFEN" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,18,0,0" Click="DetectGames_Click"/></StackPanel></Border></StackPanel></ScrollViewer></TabItem>
-
-<TabItem><Grid Margin="30,26"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><Border Style="{StaticResource PanelCard}"><Grid><StackPanel><TextBlock Text="DIAGNOSE" Style="{StaticResource CardTitle}"/><TextBlock x:Name="DiagnosticSummary" Text="System wird geprüft …" Foreground="{StaticResource Muted}" Margin="0,8,0,0"/></StackPanel><Button Content="DIAGNOSE AKTUALISIEREN" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Right" Click="RunDiagnostics_Click"/></Grid></Border><TextBox x:Name="LogBox" Grid.Row="1" Margin="0,16" FontFamily="Consolas" FontSize="11" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" AcceptsReturn="True"/><StackPanel Grid.Row="2" Orientation="Horizontal"><Button Content="LOGDATEI ÖFFNEN" Style="{StaticResource SecondaryButton}" Click="OpenLogs_Click"/><Button Content="FEHLERBERICHT VORBEREITEN" Style="{StaticResource SecondaryButton}" Margin="8,0" Click="PrepareReport_Click"/><Button Content="OFFLINE-PAKETE SYNCHRONISIEREN" Style="{StaticResource PrimaryButton}" Click="SyncNow_Click"/></StackPanel></Grid></TabItem>
-
-<TabItem><ScrollViewer><StackPanel Margin="30,26"><Border Style="{StaticResource PanelCard}"><StackPanel><TextBlock Text="VERBINDUNG" Style="{StaticResource CardTitle}"/><TextBlock Text="SERVER-URL" Style="{StaticResource FieldLabel}" Margin="0,16,0,5"/><TextBox x:Name="ApiUrlBox" Text="https://vtc-truck-hub.de"/><TextBlock Text="TELEMETRIE-API-SCHLÜSSEL DER AUSGEWÄHLTEN SPEDITION" Style="{StaticResource FieldLabel}" Margin="0,13,0,5"/><PasswordBox x:Name="ApiKeyBox"/><TextBlock Text="Den Schlüssel erstellt die berechtigte VTC-Leitung unter Integrationen → API-Schlüssel. Er ist nur für diese Spedition gültig." Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/><TextBlock Text="SENDINTERVALL (MILLISEKUNDEN)" Style="{StaticResource FieldLabel}" Margin="0,13,0,5"/><TextBox x:Name="IntervalBox" Text="1000" Width="180" HorizontalAlignment="Left"/></StackPanel></Border><Border Style="{StaticResource PanelCard}" Margin="0,16,0,0"><StackPanel><TextBlock Text="CLIENTVERHALTEN" Style="{StaticResource CardTitle}"/><CheckBox x:Name="AutoStartCheck" Content="Mit Windows starten" Margin="0,18,0,0" Foreground="White"/><CheckBox x:Name="MinimizeTrayCheck" Content="Beim Schließen in den Infobereich minimieren" Margin="0,12,0,0" Foreground="White" IsChecked="True"/><CheckBox x:Name="AutoSyncCheck" Content="Offline-Fahrten automatisch nachsynchronisieren" Margin="0,12,0,0" Foreground="White" IsChecked="True"/><CheckBox x:Name="AutoTripCheck" Content="Fahrten bei Auftragsannahme automatisch starten" Margin="0,12,0,0" Foreground="White" IsChecked="True"/><Button Content="EINSTELLUNGEN SPEICHERN" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,22,0,0" Click="SaveSettings_Click"/></StackPanel></Border></StackPanel></ScrollViewer></TabItem>
-</TabControl></Grid></Grid>
+  <Window.Resources>
+    <Style x:Key="PanelCard" TargetType="Border">
+      <Setter Property="Background" Value="#0D1519" />
+      <Setter Property="BorderBrush" Value="#3D3427" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="20" />
+    </Style>
+    <Style x:Key="MetricCard" TargetType="Border">
+      <Setter Property="Background" Value="#10181C" />
+      <Setter Property="BorderBrush" Value="#3D3427" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="16" />
+    </Style>
+    <Style x:Key="MetricLabel" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#758893" />
+      <Setter Property="FontSize" Value="8" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style x:Key="MetricValue" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="22" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Margin" Value="0,8,0,4" />
+    </Style>
+    <Style x:Key="MetricSub" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#687B86" />
+      <Setter Property="FontSize" Value="8" />
+    </Style>
+    <Style x:Key="CardTitle" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="#E8F0F2" />
+    </Style>
+    <Style x:Key="FieldLabel" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#748690" />
+      <Setter Property="FontSize" Value="8" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Margin" Value="0,0,0,5" />
+    </Style>
+    <Style x:Key="TelemetryItem" TargetType="StackPanel">
+      <Setter Property="Margin" Value="0,0,10,22" />
+    </Style>
+  </Window.Resources>
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="220" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+    <Border Grid.Column="0" Background="#091722" BorderBrush="#253845" BorderThickness="0,0,1,0">
+      <Grid Margin="14,22">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <StackPanel Orientation="Horizontal" Margin="7,0,0,24">
+          <Border Width="38" Height="38" BorderBrush="{StaticResource Teal}" BorderThickness="2" CornerRadius="8">
+            <TextBlock Text="VH" Foreground="{StaticResource Teal}" FontWeight="Black" VerticalAlignment="Center" HorizontalAlignment="Center" />
+          </Border>
+          <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+            <TextBlock FontSize="15" FontWeight="Black">
+              <Run Text="VTC TRUCK " />
+              <Run Text="HUB" Foreground="{StaticResource Teal}" />
+            </TextBlock>
+            <TextBlock Text="ETS2 · ATS TELEMETRY" Foreground="{StaticResource Muted}" FontSize="7" Margin="0,2,0,0" />
+          </StackPanel>
+        </StackPanel>
+        <Border Grid.Row="1" Background="#17150F" BorderBrush="#594421" BorderThickness="1" Padding="10" Margin="0,0,0,18">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="34" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Border Width="32" Height="32" Background="#2A2213">
+              <TextBlock x:Name="CompanyTagText" Text="VTC" Foreground="{StaticResource Teal}" FontSize="9" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Grid.Column="1" Margin="9,0">
+              <TextBlock x:Name="CompanyNameText" Text="Noch nicht angemeldet" FontSize="10" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
+              <TextBlock x:Name="CompanyRoleText" Text="Konto mit Spedition verbinden" Foreground="{StaticResource Muted}" FontSize="8" Margin="0,3,0,0" />
+            </StackPanel>
+            <TextBlock Grid.Column="2" Text="⌄" Foreground="{StaticResource Muted}" VerticalAlignment="Center" />
+          </Grid>
+        </Border>
+        <StackPanel Grid.Row="2">
+          <Button x:Name="NavOverview" Content="⌂   Übersicht" Style="{StaticResource NavButton}" Tag="active" Click="Nav_Click" CommandParameter="0" />
+          <Button x:Name="NavTelemetry" Content="◉   Telemetrie" Style="{StaticResource NavButton}" Click="Nav_Click" CommandParameter="1" />
+          <Button x:Name="NavTrip" Content="▰   Aktive Fahrt" Style="{StaticResource NavButton}" Click="Nav_Click" CommandParameter="2" />
+          <Button x:Name="NavPlugin" Content="⚙   Spiele &amp; Plugin" Style="{StaticResource NavButton}" Click="Nav_Click" CommandParameter="3" />
+          <Button x:Name="NavLogs" Content="≣   Diagnose" Style="{StaticResource NavButton}" Click="Nav_Click" CommandParameter="4" />
+          <Button x:Name="NavSettings" Content="◫   Einstellungen" Style="{StaticResource NavButton}" Click="Nav_Click" CommandParameter="5" />
+        </StackPanel>
+        <StackPanel Grid.Row="3">
+          <Border Height="1" Background="#263945" Margin="0,0,0,12" />
+          <TextBlock x:Name="VersionText" Text="CLIENT v1.0.0" Foreground="#5F7480" FontSize="8" Margin="10,0" />
+          <TextBlock Text="SCS TELEMETRY SDK 1.14" Foreground="#5F7480" FontSize="8" Margin="10,4,0,0" />
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Grid Grid.Column="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="76" />
+        <RowDefinition Height="*" />
+      </Grid.RowDefinitions>
+      <Border Background="#0B1A25" BorderBrush="#253845" BorderThickness="0,0,0,1">
+        <Grid Margin="30,0">
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock x:Name="HeaderEyebrow" Text="DESKTOP-CLIENT" Foreground="{StaticResource Teal}" FontSize="9" FontWeight="Bold" />
+            <TextBlock x:Name="HeaderTitle" Text="Übersicht" FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <Border Background="#102D35" BorderBrush="#1E5A55" BorderThickness="1" Padding="10,7" Margin="0,0,10,0">
+              <StackPanel Orientation="Horizontal">
+                <Ellipse x:Name="ConnectionDot" Width="7" Height="7" Fill="{StaticResource Teal}" Margin="0,0,8,0" />
+                <TextBlock x:Name="ConnectionText" Text="SERVER VERBUNDEN" FontSize="8" FontWeight="Bold" />
+              </StackPanel>
+            </Border>
+            <Border Background="#10202C" BorderBrush="#2A404C" BorderThickness="1" Padding="10,7">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="GameStatusText" Text="KEIN SPIEL ERKANNT" Foreground="{StaticResource Muted}" FontSize="8" FontWeight="Bold" />
+                <Ellipse x:Name="GameDot" Width="7" Height="7" Fill="#52656F" Margin="8,0,0,0" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Grid>
+      </Border>
+      <TabControl x:Name="Pages" Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="0">
+        <TabControl.Resources>
+          <Style TargetType="TabItem">
+            <Setter Property="Visibility" Value="Collapsed" />
+          </Style>
+        </TabControl.Resources>
+        <TabItem>
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="30,26,30,40">
+              <Border Background="#0F2632" BorderBrush="#21404B" BorderThickness="1" CornerRadius="14" ClipToBounds="True" Margin="0,0,0,16">
+                <Grid Height="220">
+                  <Image Source="Assets/vtc-truck-hub-login.png" Stretch="UniformToFill" Opacity="0.74" />
+                  <Border>
+                    <Border.Background>
+                      <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#F207151F" Offset="0" />
+                        <GradientStop Color="#E808151F" Offset="0.5" />
+                        <GradientStop Color="#3208151F" Offset="1" />
+                      </LinearGradientBrush>
+                    </Border.Background>
+                  </Border>
+                  <Grid Margin="28">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                      <StackPanel Orientation="Horizontal">
+                        <Border Background="#142DD6C8" BorderBrush="#4F22D3C5" BorderThickness="1" CornerRadius="9" Padding="10,5" Margin="0,0,8,0">
+                          <TextBlock Text="EURO TRUCK SIMULATOR 2" Foreground="#E8FFFF" FontSize="8" FontWeight="Bold" />
+                        </Border>
+                        <Border Background="#14F3A84F" BorderBrush="#6AF3A84F" BorderThickness="1" CornerRadius="9" Padding="10,5">
+                          <TextBlock Text="AMERICAN TRUCK SIMULATOR" Foreground="#FFF2DF" FontSize="8" FontWeight="Bold" />
+                        </Border>
+                      </StackPanel>
+                      <TextBlock Text="Deine Straße. Deine Daten." Foreground="#F2C45D" FontSize="31" FontWeight="Black" Margin="0,14,0,6" />
+                      <TextBlock Text="VTC Truck Hub erkennt ETS2 und ATS, bewahrt laufende Aufträge und synchronisiert deine Telemetrie." Foreground="#C7D3D8" FontSize="11" TextWrapping="Wrap" MaxWidth="620" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Bottom" Orientation="Horizontal">
+                      <Button Content="ETS2 STARTEN" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Click="StartEts2_Click" />
+                      <Button Content="ATS STARTEN" Style="{StaticResource SecondaryButton}" Click="StartAts_Click" />
+                    </StackPanel>
+                  </Grid>
+                </Grid>
+              </Border>
+              <Grid Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition />
+                  <ColumnDefinition />
+                  <ColumnDefinition />
+                  <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource MetricCard}">
+                  <StackPanel>
+                    <TextBlock Text="SPIEL" Style="{StaticResource MetricLabel}" />
+                    <TextBlock x:Name="MetricGame" Text="OFFLINE" Style="{StaticResource MetricValue}" />
+                    <TextBlock Text="Automatische Erkennung" Style="{StaticResource MetricSub}" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Style="{StaticResource MetricCard}" Margin="10,0,0,0">
+                  <StackPanel>
+                    <TextBlock Text="TELEMETRIE" Style="{StaticResource MetricLabel}" />
+                    <TextBlock x:Name="MetricPackets" Text="0" Style="{StaticResource MetricValue}" />
+                    <TextBlock Text="Pakete empfangen" Style="{StaticResource MetricSub}" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Style="{StaticResource MetricCard}" Margin="10,0,0,0">
+                  <StackPanel>
+                    <TextBlock Text="SYNCHRONISIERUNG" Style="{StaticResource MetricLabel}" />
+                    <TextBlock x:Name="MetricSynced" Text="0" Style="{StaticResource MetricValue}" />
+                    <TextBlock Text="Pakete übertragen" Style="{StaticResource MetricSub}" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="3" Style="{StaticResource MetricCard}" Margin="10,0,0,0">
+                  <StackPanel>
+                    <TextBlock Text="OFFLINE-PUFFER" Style="{StaticResource MetricLabel}" />
+                    <TextBlock x:Name="MetricQueued" Text="0" Style="{StaticResource MetricValue}" />
+                    <TextBlock Text="Warten auf Verbindung" Style="{StaticResource MetricSub}" />
+                  </StackPanel>
+                </Border>
+              </Grid>
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="1.55*" />
+                  <ColumnDefinition Width="1*" />
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource PanelCard}" Margin="0,0,8,0" CornerRadius="12">
+                  <StackPanel>
+                    <TextBlock Text="KONTO &amp; SPEDITION" Style="{StaticResource CardTitle}" />
+                    <TextBlock x:Name="AccountState" Text="Wähle eine sichere Anmeldeart" Foreground="{StaticResource Muted}" Margin="0,5,0,14" />
+                    <UniformGrid Columns="3" Margin="0,0,0,14">
+                      <Button Content="G  GOOGLE" Background="#FFFFFF" Foreground="#24344A" Padding="12,10" Margin="0,0,6,0" Click="OAuthLogin_Click" Tag="google" />
+                      <Button Content="●  STEAM" Background="#173A55" Foreground="White" Padding="12,10" Margin="3,0" Click="OAuthLogin_Click" Tag="steam" />
+                      <Button Content="◉  DISCORD" Background="#5865F2" Foreground="White" Padding="12,10" Margin="6,0,0,0" Click="OAuthLogin_Click" Tag="discord" />
+                    </UniformGrid>
+                    <Border Height="1" Background="#263C48" Margin="0,0,0,13" />
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition />
+                        <ColumnDefinition />
+                      </Grid.ColumnDefinitions>
+                      <StackPanel Margin="0,0,5,0">
+                        <TextBlock Text="E-MAIL" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="EmailBox" ToolTip="E-Mail-Adresse deines VTC-Truck-Hub-Kontos" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                        <TextBlock Text="PASSWORT" Style="{StaticResource FieldLabel}" />
+                        <PasswordBox x:Name="PasswordInput" ToolTip="Dein persönliches Passwort" />
+                      </StackPanel>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                      <Button Content="NORMAL ANMELDEN" Style="{StaticResource PrimaryButton}" Click="Login_Click" />
+                      <ComboBox x:Name="VtcCombo" Width="220" Margin="10,0,0,0" SelectedIndex="0" ToolTip="Deine Speditionen werden nach der Anmeldung automatisch geladen" />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Style="{StaticResource PanelCard}" Margin="8,0,0,0">
+                  <StackPanel>
+                    <TextBlock Text="SYSTEMSTATUS" Style="{StaticResource CardTitle}" />
+                    <Grid Margin="0,15,0,0">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <StackPanel>
+                        <TextBlock Text="SCS Telemetrie-Plugin" Foreground="{StaticResource Muted}" FontSize="10" />
+                        <TextBlock Text="API-Verbindung" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,14,0,0" />
+                        <TextBlock Text="Client-Update" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,14,0,0" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1">
+                        <TextBlock x:Name="PluginQuickState" Text="PRÜFEN" Foreground="#E8A45A" FontSize="9" FontWeight="Bold" HorizontalAlignment="Right" />
+                        <TextBlock x:Name="ApiQuickState" Text="VERBUNDEN" Foreground="{StaticResource Teal}" FontSize="9" FontWeight="Bold" Margin="0,14,0,0" HorizontalAlignment="Right" />
+                        <TextBlock x:Name="UpdateQuickState" Text="PRÜFUNG …" Foreground="#E8A45A" FontSize="9" FontWeight="Bold" Margin="0,14,0,0" HorizontalAlignment="Right" />
+                      </StackPanel>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                      <Button Content="VOLLSTÄNDIGE DIAGNOSE →" Style="{StaticResource SecondaryButton}" Click="OpenDiagnostics_Click" />
+                      <Button Content="NACH UPDATE SUCHEN" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="CheckUpdate_Click" />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+              </Grid>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem>
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="30,26">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="2*" />
+                  <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource PanelCard}" Margin="0,0,8,0">
+                  <StackPanel>
+                    <TextBlock Text="FAHRZEUG LIVE" Style="{StaticResource CardTitle}" />
+                    <Grid Margin="0,20,0,0">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition />
+                        <ColumnDefinition />
+                        <ColumnDefinition />
+                      </Grid.ColumnDefinitions>
+                      <StackPanel>
+                        <TextBlock Text="GESCHWINDIGKEIT" Style="{StaticResource MetricLabel}" />
+                        <TextBlock>
+                          <Run x:Name="SpeedRun" Text="0" FontSize="46" FontWeight="Bold" />
+                          <Run Text=" km/h" Foreground="{StaticResource Muted}" />
+                        </TextBlock>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1">
+                        <TextBlock Text="MOTORDREHZAHL" Style="{StaticResource MetricLabel}" />
+                        <TextBlock>
+                          <Run x:Name="RpmRun" Text="0" FontSize="34" FontWeight="Bold" />
+                          <Run Text=" rpm" Foreground="{StaticResource Muted}" />
+                        </TextBlock>
+                      </StackPanel>
+                      <StackPanel Grid.Column="2">
+                        <TextBlock Text="GANG" Style="{StaticResource MetricLabel}" />
+                        <TextBlock x:Name="GearText" Text="N" FontSize="34" FontWeight="Bold" />
+                      </StackPanel>
+                    </Grid>
+                    <Border x:Name="SpeedWarningPanel" Background="#132936" BorderBrush="#2A414D" BorderThickness="1" Padding="12" Margin="0,18,0,0">
+                      <Grid>
+                        <StackPanel>
+                          <TextBlock x:Name="SpeedWarningText" Text="SICHERE FAHRT" Foreground="{StaticResource Teal}" FontSize="10" FontWeight="Bold" />
+                          <TextBlock x:Name="SpeedWarningDetail" Text="Ab 95 km/h beginnt die Punkteerfassung." Foreground="{StaticResource Muted}" FontSize="9" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <TextBlock x:Name="PointCounterText" Text="0 PUNKTE" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" />
+                      </Grid>
+                    </Border>
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Style="{StaticResource PanelCard}" Margin="8,0,0,0">
+                  <StackPanel>
+                    <TextBlock Text="POSITION" Style="{StaticResource CardTitle}" />
+                    <TextBlock x:Name="PositionText" Text="X 0,0  ·  Y 0,0  ·  Z 0,0" FontSize="14" FontWeight="Bold" Margin="0,18,0,0" />
+                    <TextBlock x:Name="HeadingText" Text="Fahrtrichtung 0°" Foreground="{StaticResource Muted}" FontSize="10" Margin="0,8,0,0" />
+                    <TextBlock x:Name="PacketTimeText" Text="Noch kein Signal" Foreground="{StaticResource Teal}" FontSize="9" Margin="0,16,0,0" />
+                  </StackPanel>
+                </Border>
+              </Grid>
+              <Border Style="{StaticResource PanelCard}" Margin="0,16,0,0">
+                <StackPanel>
+                  <TextBlock Text="KOMPLETTE SCS-TELEMETRIE" Style="{StaticResource CardTitle}" />
+                  <UniformGrid Columns="4" Margin="0,18,0,0">
+                    <StackPanel Style="{StaticResource TelemetryItem}">
+                      <TextBlock Text="Kraftstoff" Style="{StaticResource MetricLabel}" />
+                      <TextBlock x:Name="FuelText" Text="0,0 l" FontSize="18" FontWeight="Bold" />
+                    </StackPanel>
+                    <StackPanel Style="{StaticResource TelemetryItem}">
+                      <TextBlock Text="Verbrauch" Style="{StaticResource MetricLabel}" />
+                      <TextBlock x:Name="ConsumptionText" Text="0,0 l/100 km" FontSize="18" FontWeight="Bold" />
+                    </StackPanel>
+                    <StackPanel Style="{StaticResource TelemetryItem}">
+                      <TextBlock Text="Tempomat" Style="{StaticResource MetricLabel}" />
+                      <TextBlock x:Name="CruiseText" Text="Aus" FontSize="18" FontWeight="Bold" />
+                    </StackPanel>
+                    <StackPanel Style="{StaticResource TelemetryItem}">
+                      <TextBlock Text="Navigation" Style="{StaticResource MetricLabel}" />
+                      <TextBlock x:Name="NavDistanceText" Text="0 km" FontSize="18" FontWeight="Bold" />
+                    </StackPanel>
+                    <StackPanel Style="{StaticResource TelemetryItem}">
+                      <TextBlock Text="Motor" Style="{StaticResource MetricLabel}" />
+                      <TextBlock x:Name="EngineText" Text="Aus" FontSize="18" FontWeight="Bold" />
+                    </StackPanel>
+                    <StackPanel Style="{StaticResource TelemetryItem}">
+                      <TextBlock Text="Schaden LKW" Style="{StaticResource MetricLabel}" />
+                      <TextBlock x:Name="TruckDamageText" Text="0,0 %" FontSize="18" FontWeight="Bold" />
+                    </StackPanel>
+                    <StackPanel Style="{StaticResource TelemetryItem}">
+                      <TextBlock Text="Schaden Auflieger" Style="{StaticResource MetricLabel}" />
+                      <TextBlock x:Name="TrailerDamageText" Text="0,0 %" FontSize="18" FontWeight="Bold" />
+                    </StackPanel>
+                    <StackPanel Style="{StaticResource TelemetryItem}">
+                      <TextBlock Text="Spielzeit" Style="{StaticResource MetricLabel}" />
+                      <TextBlock x:Name="GameTimeText" Text="00:00" FontSize="18" FontWeight="Bold" />
+                    </StackPanel>
+                  </UniformGrid>
+                </StackPanel>
+              </Border>
+              <Border Style="{StaticResource PanelCard}" Margin="0,16,0,0">
+                <StackPanel>
+                  <TextBlock Text="AKTUELLER AUFTRAG" Style="{StaticResource CardTitle}" />
+                  <Grid Margin="0,16,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition />
+                      <ColumnDefinition />
+                      <ColumnDefinition />
+                      <ColumnDefinition />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                      <TextBlock Text="FRACHT" Style="{StaticResource FieldLabel}" />
+                      <TextBlock x:Name="CargoText" Text="Kein Auftrag" FontWeight="Bold" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                      <TextBlock Text="START" Style="{StaticResource FieldLabel}" />
+                      <TextBlock x:Name="SourceText" Text="—" FontWeight="Bold" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                      <TextBlock Text="ZIEL" Style="{StaticResource FieldLabel}" />
+                      <TextBlock x:Name="DestinationText" Text="—" FontWeight="Bold" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="3">
+                      <TextBlock Text="FRACHTGEWICHT" Style="{StaticResource FieldLabel}" />
+                      <TextBlock x:Name="CargoMassText" Text="0 t" FontWeight="Bold" />
+                    </StackPanel>
+                  </Grid>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem>
+          <ScrollViewer>
+            <StackPanel Margin="30,26">
+              <Border Style="{StaticResource PanelCard}">
+                <StackPanel>
+                  <TextBlock Text="FAHRTENSTEUERUNG" Style="{StaticResource CardTitle}" />
+                  <TextBlock x:Name="TripStatusText" Text="Keine aktive Fahrt" FontSize="26" FontWeight="Bold" Margin="0,14,0,4" />
+                  <TextBlock x:Name="TripIdText" Text="Der Client startet automatisch eine Fahrt, sobald das Spiel einen Auftrag meldet." Foreground="{StaticResource Muted}" />
+                  <StackPanel Orientation="Horizontal" Margin="0,24,0,0">
+                    <Button Content="FAHRT STARTEN" Style="{StaticResource PrimaryButton}" Click="TripStart_Click" />
+                    <Button Content="PAUSIEREN" Style="{StaticResource SecondaryButton}" Margin="8,0" Click="TripPause_Click" />
+                    <Button Content="FORTSETZEN" Style="{StaticResource SecondaryButton}" Click="TripResume_Click" />
+                    <Button Content="ABSCHLIESSEN" Style="{StaticResource SecondaryButton}" Margin="8,0" Click="TripComplete_Click" />
+                    <Button Content="ABBRECHEN" Background="#562D30" Foreground="#FFB4B4" Padding="16,10" Click="TripAbort_Click" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+              <Grid Margin="0,16,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition />
+                  <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource PanelCard}" Margin="0,0,8,0">
+                  <StackPanel>
+                    <TextBlock Text="FAHRTDATEN" Style="{StaticResource CardTitle}" />
+                    <TextBlock x:Name="TripRouteText" Text="— → —" FontSize="20" FontWeight="Bold" Margin="0,16,0,0" />
+                    <TextBlock x:Name="TripCargoText" Text="Keine Fracht" Foreground="{StaticResource Muted}" Margin="0,7,0,0" />
+                    <TextBlock x:Name="TripDistanceText" Text="0 km erfasst" Foreground="{StaticResource Teal}" Margin="0,18,0,0" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Style="{StaticResource PanelCard}" Margin="8,0,0,0">
+                  <StackPanel>
+                    <TextBlock Text="PRÜFSTATUS" Style="{StaticResource CardTitle}" />
+                    <TextBlock x:Name="AnomalyText" Text="Keine Auffälligkeiten" Foreground="{StaticResource Teal}" FontSize="15" FontWeight="Bold" Margin="0,16,0,0" />
+                    <TextBlock Text="Geschwindigkeit, Positionssprünge, Zeitmanipulation, Schäden und doppelte Pakete werden automatisch markiert." Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                  </StackPanel>
+                </Border>
+              </Grid>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem>
+          <ScrollViewer>
+            <StackPanel Margin="30,26">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition />
+                  <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource PanelCard}" Margin="0,0,8,0">
+                  <StackPanel>
+                    <TextBlock Text="EURO TRUCK SIMULATOR 2" Style="{StaticResource CardTitle}" />
+                    <TextBlock x:Name="EtsPathText" Text="Suche Installation …" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0" />
+                    <TextBlock x:Name="EtsPluginText" Text="Pluginstatus unbekannt" FontWeight="Bold" />
+                    <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                      <Button Content="PLUGIN INSTALLIEREN / REPARIEREN" Style="{StaticResource PrimaryButton}" Click="InstallPlugin_Click" Tag="ETS2" />
+                      <Button Content="SPIEL STARTEN" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="StartEts2_Click" />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Style="{StaticResource PanelCard}" Margin="8,0,0,0">
+                  <StackPanel>
+                    <TextBlock Text="AMERICAN TRUCK SIMULATOR" Style="{StaticResource CardTitle}" />
+                    <TextBlock x:Name="AtsPathText" Text="Suche Installation …" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0" />
+                    <TextBlock x:Name="AtsPluginText" Text="Pluginstatus unbekannt" FontWeight="Bold" />
+                    <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                      <Button Content="PLUGIN INSTALLIEREN / REPARIEREN" Style="{StaticResource PrimaryButton}" Click="InstallPlugin_Click" Tag="ATS" />
+                      <Button Content="SPIEL STARTEN" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="StartAts_Click" />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+              </Grid>
+              <Border Style="{StaticResource PanelCard}" Margin="0,16,0,0">
+                <StackPanel>
+                  <TextBlock Text="TELEMETRIE-BRIDGE" Style="{StaticResource CardTitle}" />
+                  <Grid Margin="0,14,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition />
+                      <ColumnDefinition />
+                      <ColumnDefinition />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                      <TextBlock Text="SDK-VERSION" Style="{StaticResource MetricLabel}" />
+                      <TextBlock Text="SCS 1.14" FontSize="18" FontWeight="Bold" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                      <TextBlock Text="LOKALER PORT" Style="{StaticResource MetricLabel}" />
+                      <TextBlock Text="127.0.0.1:35055" FontSize="18" FontWeight="Bold" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                      <TextBlock Text="PLUGIN-DATEI" Style="{StaticResource MetricLabel}" />
+                      <TextBlock x:Name="BridgeFileText" Text="convoyhub_scs.dll" FontSize="18" FontWeight="Bold" />
+                    </StackPanel>
+                  </Grid>
+                  <Button Content="ERNEUT PRÜFEN" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,18,0,0" Click="DetectGames_Click" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem>
+          <Grid Margin="30,26">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Border Style="{StaticResource PanelCard}">
+              <Grid>
+                <StackPanel>
+                  <TextBlock Text="DIAGNOSE" Style="{StaticResource CardTitle}" />
+                  <TextBlock x:Name="DiagnosticSummary" Text="System wird geprüft …" Foreground="{StaticResource Muted}" Margin="0,8,0,0" />
+                </StackPanel>
+                <Button Content="DIAGNOSE AKTUALISIEREN" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Right" Click="RunDiagnostics_Click" />
+              </Grid>
+            </Border>
+            <TextBox x:Name="LogBox" Grid.Row="1" Margin="0,16" FontFamily="Consolas" FontSize="11" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" AcceptsReturn="True" />
+            <StackPanel Grid.Row="2" Orientation="Horizontal">
+              <Button Content="LOGDATEI ÖFFNEN" Style="{StaticResource SecondaryButton}" Click="OpenLogs_Click" />
+              <Button Content="FEHLERBERICHT VORBEREITEN" Style="{StaticResource SecondaryButton}" Margin="8,0" Click="PrepareReport_Click" />
+              <Button Content="OFFLINE-PAKETE SYNCHRONISIEREN" Style="{StaticResource PrimaryButton}" Click="SyncNow_Click" />
+            </StackPanel>
+          </Grid>
+        </TabItem>
+        <TabItem>
+          <ScrollViewer>
+            <StackPanel Margin="30,26">
+              <Border Style="{StaticResource PanelCard}">
+                <StackPanel>
+                  <TextBlock Text="VERBINDUNG" Style="{StaticResource CardTitle}" />
+                  <TextBlock Text="SERVER-URL" Style="{StaticResource FieldLabel}" Margin="0,16,0,5" />
+                  <TextBox x:Name="ApiUrlBox" Text="https://vtc-truck-hub.de" />
+                  <TextBlock Text="PERSÖNLICHER CLIENTSCHLÜSSEL · AUSGEWÄHLTE SPEDITION" Style="{StaticResource FieldLabel}" Margin="0,13,0,5" />
+                  <PasswordBox x:Name="ApiKeyBox" />
+                  <TextBlock Text="Wird nach der Kontoanmeldung automatisch erzeugt und eingesetzt. Der Schlüssel gehört nur zu diesem Benutzerkonto und dieser Spedition; eine manuelle Eingabe ist nicht nötig." Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                  <TextBlock Text="SENDINTERVALL (MILLISEKUNDEN)" Style="{StaticResource FieldLabel}" Margin="0,13,0,5" />
+                  <TextBox x:Name="IntervalBox" Text="1000" Width="180" HorizontalAlignment="Left" />
+                </StackPanel>
+              </Border>
+              <Border Style="{StaticResource PanelCard}" Margin="0,16,0,0">
+                <StackPanel>
+                  <TextBlock Text="CLIENTVERHALTEN" Style="{StaticResource CardTitle}" />
+                  <CheckBox x:Name="AutoStartCheck" Content="Mit Windows starten" Margin="0,18,0,0" Foreground="White" />
+                  <CheckBox x:Name="MinimizeTrayCheck" Content="Beim Schließen in den Infobereich minimieren" Margin="0,12,0,0" Foreground="White" IsChecked="True" />
+                  <CheckBox x:Name="AutoSyncCheck" Content="Offline-Fahrten automatisch nachsynchronisieren" Margin="0,12,0,0" Foreground="White" IsChecked="True" />
+                  <CheckBox x:Name="AutoTripCheck" Content="Fahrten bei Auftragsannahme automatisch starten" Margin="0,12,0,0" Foreground="White" IsChecked="True" />
+                  <Button Content="EINSTELLUNGEN SPEICHERN" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,22,0,0" Click="SaveSettings_Click" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+      </TabControl>
+    </Grid>
+  </Grid>
 </Window>

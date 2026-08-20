@@ -49,11 +49,27 @@ const statuses = [
   "withdrawn",
   "blocked",
 ];
+const defaultFields = [
+  { id: "discordId", label: "Discord-ID", type: "text", required: true },
+  { id: "truckersmpId", label: "TruckersMP-ID", type: "text", required: true },
+  { id: "hours", label: "Spielstunden", type: "number", required: true },
+  { id: "experience", label: "Fahrerfahrung", type: "textarea", required: true },
+  { id: "motivation", label: "Warum möchtest du beitreten?", type: "textarea", required: true },
+  { id: "availability", label: "Verfügbarkeit", type: "text", required: true },
+];
+async function ensureApplicationForm(vtcId: string) {
+  if (!vtcId) return;
+  await platformEnv().DB.prepare(
+    `INSERT OR IGNORE INTO application_forms (vtc_id,fields,cooldown_days,probation_days,open) VALUES (?,?,30,28,1)`,
+  ).bind(vtcId, JSON.stringify(defaultFields)).run();
+}
 export async function GET(request: Request) {
   await ensureDatabase();
   const url = new URL(request.url),
     requested=url.searchParams.get("vtcId"),vtcId = requested&&!['vtc-ngl','vtc-ast','vtc-r66'].includes(requested)?requested:(await resolveVtcId(request,requested))??"",
     db = platformEnv().DB;
+  if (!vtcId) return apiError("Keine Spedition ausgewählt", 404);
+  await ensureApplicationForm(vtcId);
   if (url.searchParams.get("view") === "form") {
     const [vtc, form] = await Promise.all([
       db
@@ -121,6 +137,8 @@ export async function POST(request: Request) {
   const b = (await request.json()) as Body,
     db = platformEnv().DB,
     requested=b.vtcId,vtcId = requested&&!['vtc-ngl','vtc-ast','vtc-r66'].includes(requested)?requested:(await resolveVtcId(request,requested))??"";
+  if (!vtcId) return apiError("Keine Spedition ausgewählt", 404);
+  await ensureApplicationForm(vtcId);
   if (!b.action || b.action === "submit") {
     const vtc = await db
         .prepare(
@@ -327,6 +345,18 @@ export async function POST(request: Request) {
         )
         .bind(vtcId)
         .first<{ probationDays: number; autoRoleId: string | null }>(),
+      configuredRole = form?.autoRoleId
+        ? await db
+            .prepare(`SELECT id FROM roles WHERE id=? AND vtc_id=?`)
+            .bind(form.autoRoleId, vtcId)
+            .first<{ id: string }>()
+        : null,
+      fallbackRole = await db
+        .prepare(
+          `SELECT id FROM roles WHERE vtc_id=? ORDER BY CASE WHEN lower(name) IN ('fahrer in probezeit','probefahrer') THEN 0 WHEN lower(name)='fahrer' THEN 1 ELSE 2 END,rank ASC LIMIT 1`,
+        )
+        .bind(vtcId)
+        .first<{ id: string }>(),
       next = await db
         .prepare(`SELECT COUNT(*)+1 value FROM memberships WHERE vtc_id=?`)
         .bind(vtcId)
@@ -350,7 +380,7 @@ export async function POST(request: Request) {
           randomId(),
           vtcId,
           application.userId,
-          form?.autoRoleId ?? "role-ngl-probation",
+          configuredRole?.id ?? fallbackRole?.id ?? null,
           `DRV-${String(next?.value ?? 1).padStart(4, "0")}`,
         ),
       db

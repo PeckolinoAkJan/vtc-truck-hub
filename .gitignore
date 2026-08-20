@@ -42,6 +42,8 @@ yarn-error.log*
 /desktop-client/**/bin/
 /desktop-client/**/obj/
 /desktop-client/release/
+/desktop-client/publish/
+/desktop-client/installer/output/
 /desktop-client/ConvoyHub.ScsPlugin/*.obj
 /desktop-client/ConvoyHub.ScsPlugin/*.lib
 /desktop-client/ConvoyHub.ScsPlugin/*.exp

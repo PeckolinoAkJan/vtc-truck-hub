@@ -23,10 +23,35 @@ type Packet = {
   heading?: number;
   speedKph?: number;
   rpm?: number;
+  gear?: number;
   fuelLiters?: number;
+  fuelAverage?: number;
+  fuelRange?: number;
   odometerKm?: number;
   truckDamage?: number;
   trailerDamage?: number;
+  cargoDamage?: number;
+  cruiseControl?: boolean;
+  engineEnabled?: boolean;
+  parkingBrake?: boolean;
+  motorBrake?: boolean;
+  retarderLevel?: number;
+  leftBlinker?: boolean;
+  rightBlinker?: boolean;
+  hazardWarning?: boolean;
+  lowBeam?: boolean;
+  highBeam?: boolean;
+  beacon?: boolean;
+  brakeAirPressure?: number;
+  waterTemperature?: number;
+  batteryVoltage?: number;
+  steeringInput?: number;
+  throttleInput?: number;
+  brakeInput?: number;
+  navigationDistance?: number;
+  navigationTime?: number;
+  navigationSpeedLimitKph?: number;
+  gameTime?: number;
   truck?: string;
   cargo?: string;
   cargoMass?: number;
@@ -59,13 +84,13 @@ async function authorized(request: Request) {
     configured = configuredValue && configuredValue !== "demo-client-key" ? configuredValue : undefined,
     supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!supplied) return null;
-  if (configured && supplied === configured) return { vtcId: null, keyId: null };
+  if (configured && supplied === configured) return { vtcId: null, userId: null, keyId: null };
   const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(supplied))),b=>b.toString(16).padStart(2,"0")).join("");
-  const key=await platformEnv().DB.prepare(`SELECT id,vtc_id AS vtcId,scopes FROM api_keys WHERE secret_hash=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP)`).bind(digest).first<{id:string;vtcId:string;scopes:string}>();
+  const key=await platformEnv().DB.prepare(`SELECT id,vtc_id AS vtcId,user_id AS userId,scopes FROM api_keys WHERE secret_hash=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP)`).bind(digest).first<{id:string;vtcId:string;userId:string|null;scopes:string}>();
   if(!key)return null;const scopes=JSON.parse(key.scopes||"[]") as string[];
   if(!scopes.includes("telemetry:write"))return null;
   await platformEnv().DB.prepare(`UPDATE api_keys SET last_used_at=CURRENT_TIMESTAMP WHERE id=?`).bind(key.id).run();
-  return {vtcId:key.vtcId,keyId:key.id};
+  return {vtcId:key.vtcId,userId:key.userId,keyId:key.id};
 }
 function stableJobKey(p: Packet) {
   return (
@@ -170,12 +195,17 @@ async function scoreSpeed(p: Packet, tripId: string, recorded: string) {
         .run();
     if (Number(insert.meta.changes) > 0) added = multiplier;
   }
-  await db
+  const telemetryInsert=await db
     .prepare(
       `UPDATE speed_incidents SET last_seen_at=?,peak_speed_kph=MAX(peak_speed_kph,?),last_bucket=MAX(last_bucket,?),points=points+? WHERE id=?`,
     )
     .bind(recorded, speed, bucket, added, incident.id)
     .run();
+  const telemetryId=Number(telemetryInsert.meta.last_row_id??0);
+  if(telemetryId>0)await db.batch([
+    db.prepare(`INSERT INTO telemetry_details (telemetry_id,vtc_id,user_id,payload,recorded_at) VALUES (?,?,?,?,?)`).bind(telemetryId,p.vtcId,p.userId,JSON.stringify(p),recorded),
+    db.prepare(`DELETE FROM telemetry_details WHERE recorded_at<datetime('now','-30 days')`),
+  ]);
   return {
     active: speed >= 95,
     added,
@@ -264,6 +294,7 @@ export async function POST(request: Request) {
     return apiError("Ungültiger Telemetrie-Schlüssel", 401);
   const p = (await request.json()) as Packet;
   if(authorization.vtcId&&p.vtcId!==authorization.vtcId)return apiError("Der Telemetrie-Schlüssel gehört zu einer anderen Spedition",403);
+  if(authorization.userId&&p.userId!==authorization.userId)return apiError("Der Telemetrie-Schlüssel gehört zu einem anderen Benutzerkonto",403);
   if (!p.vtcId || !p.userId || !["ETS2", "ATS"].includes(p.game ?? ""))
     return apiError("vtcId, userId und gültiges Spiel erforderlich");
   if (
@@ -544,6 +575,22 @@ export async function POST(request: Request) {
       game: p.game,
       lifecycle,
       pointsAdded: points.added,
+      vehicleState: {
+        gear: p.gear,
+        cruiseControl: p.cruiseControl,
+        engineEnabled: p.engineEnabled,
+        parkingBrake: p.parkingBrake,
+        motorBrake: p.motorBrake,
+        retarderLevel: p.retarderLevel,
+        leftBlinker: p.leftBlinker,
+        rightBlinker: p.rightBlinker,
+        hazardWarning: p.hazardWarning,
+        lowBeam: p.lowBeam,
+        highBeam: p.highBeam,
+        beacon: p.beacon,
+      },
+      navigation: {distance: p.navigationDistance,time: p.navigationTime,speedLimitKph: p.navigationSpeedLimitKph},
+      systems: {brakeAirPressure: p.brakeAirPressure,waterTemperature: p.waterTemperature,batteryVoltage: p.batteryVoltage},
     },
     p.vtcId,
   );

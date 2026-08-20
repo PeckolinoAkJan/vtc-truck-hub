@@ -59,23 +59,23 @@ type StaffData = {
   };
 };
 export default function Applications() {
-  const vtcId=typeof location==="undefined"?"":new URLSearchParams(location.search).get("vtc")??"vtc-ngl";
+  const [vtcId,setVtcId]=useState("");
   const [publicData, setPublic] = useState<PublicData | null>(null),
     [staff, setStaff] = useState<StaffData | null>(null),
     [tab, setTab] = useState("Bewerben"),
     [selected, setSelected] = useState<Application | null>(null),
     [message, setMessage] = useState("");
-  async function load() {
-    setPublic(
-      await fetch(`/api/v1/applications?vtcId=${encodeURIComponent(vtcId)}&view=form`).then((r) =>
-        r.json(),
-      ),
-    );
-    const r = await fetch(`/api/v1/applications?vtcId=${encodeURIComponent(vtcId)}`);
+  async function load(targetVtcId=vtcId) {
+    const publicResponse=await fetch(`/api/v1/applications?vtcId=${encodeURIComponent(targetVtcId)}&view=form`),publicResult=await publicResponse.json();
+    if(!publicResponse.ok||!publicResult?.vtc||!publicResult?.form){setMessage(publicResult?.error??"Bewerbungsformular konnte nicht geladen werden");return;}
+    setPublic(publicResult);
+    const r = await fetch(`/api/v1/applications?vtcId=${encodeURIComponent(targetVtcId)}`);
     if (r.ok) setStaff(await r.json());
   }
   useEffect(() => {
-    load();
+    const selectedVtcId=new URLSearchParams(location.search).get("vtc")??"";
+    setVtcId(selectedVtcId);
+    load(selectedVtcId);
   }, []);
   async function act(body: unknown) {
     const r = await fetch("/api/v1/applications", {
@@ -91,7 +91,7 @@ export default function Applications() {
   if (!publicData)
     return (
       <main className="application-loading">
-        Bewerbungsportal wird geladen …
+        {message || "Bewerbungsportal wird geladen …"}
       </main>
     );
   return (
@@ -500,7 +500,8 @@ export default function Applications() {
                 Automatische Rolle
                 <input
                   name="autoRoleId"
-                  defaultValue={staff.form.autoRoleId ?? "role-ngl-probation"}
+                  defaultValue={staff.form.autoRoleId ?? ""}
+                  placeholder="Leer = passende Fahrerrolle automatisch wählen"
                 />
               </label>
             </div>

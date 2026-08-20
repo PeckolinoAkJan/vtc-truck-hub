@@ -5,7 +5,8 @@ const sections=[["Übersicht","/dashboard"],["Fahrer","/verwaltung"],["Bewerbung
 const enabled=["/dashboard","/verwaltung","/bewerbungen","/disposition","/fahrtenbuch","/fuhrpark","/finanzen","/abrechnung","/events","/statistik","/integrationen"];
 
 export default function VtcModuleNav(){
-  const [account,setAccount]=useState<any>(null),path=typeof location==="undefined"?"":location.pathname;
+  const [account,setAccount]=useState<any>(null),[path,setPath]=useState("");
+  useEffect(()=>{setPath(location.pathname)},[]);
   useEffect(()=>{if(!enabled.some(x=>path===x||path.startsWith(`${x}/`)))return;fetch("/api/auth/me").then(r=>r.ok?r.json():null).then(setAccount).catch(()=>{})},[path]);
   if(!enabled.some(x=>path===x||path.startsWith(`${x}/`)))return null;
   const vtc=account?.memberships?.[0];

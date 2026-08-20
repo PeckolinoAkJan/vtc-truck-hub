@@ -1,5 +1,5 @@
 #define MyAppName "VTC Truck Hub Desktop-Client"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.1.1"
 #define MyAppPublisher "VTC Truck Hub"
 #define MyAppExeName "VTCTruckHub.Client.exe"
 [Setup]

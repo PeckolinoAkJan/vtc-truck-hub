@@ -1,11 +1,11 @@
-import { createSession, ensureDatabase, platformEnv, randomId } from "@/lib/platform";
+import { createSession, ensureDatabase, platformEnv, publicRequestOrigin, randomId } from "@/lib/platform";
 
 export async function GET(request: Request) {
   await ensureDatabase();
   const url = new URL(request.url), code = url.searchParams.get("code"), state = url.searchParams.get("state"), cookies = request.headers.get("cookie") ?? "", expected = cookies.match(/(?:^|; )google_state=([^;]+)/)?.[1], desktopToken = cookies.match(/(?:^|; )desktop_auth=([^;]+)/)?.[1], cfg = platformEnv();
   if (!code || !state || state !== expected) return Response.json({ error: "Ungültiger Google-OAuth-Zustand" }, { status: 400 });
   if (!cfg.GOOGLE_CLIENT_ID || !cfg.GOOGLE_CLIENT_SECRET) return Response.json({ error: "Google ist nicht konfiguriert" }, { status: 503 });
-  const redirect = `${url.origin}/api/auth/google/callback`;
+  const redirect = `${publicRequestOrigin(request)}/api/auth/google/callback`;
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: cfg.GOOGLE_CLIENT_ID, client_secret: cfg.GOOGLE_CLIENT_SECRET, code, grant_type: "authorization_code", redirect_uri: redirect }) });
   if (!tokenRes.ok) return Response.json({ error: "Google-Tokenaustausch fehlgeschlagen" }, { status: 502 });
   const tokens = (await tokenRes.json()) as { access_token: string };

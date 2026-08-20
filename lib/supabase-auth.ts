@@ -1,4 +1,4 @@
-import { ensureDatabase, platformEnv } from "@/lib/platform";
+import { ensureDatabase, platformEnv, publicRequestOrigin } from "@/lib/platform";
 
 type SupabaseUser = {
   id: string;
@@ -16,8 +16,7 @@ function config() {
 export function supabaseOAuthUrl(request: Request, provider: "google" | "discord") {
   const cfg = config();
   if (!cfg) return null;
-  const requestUrl = new URL(request.url);
-  const redirect = new URL("/konto", requestUrl.origin);
+  const redirect = new URL("/konto", publicRequestOrigin(request));
   redirect.searchParams.set("auth", "supabase");
   const target = new URL(`${cfg.url}/auth/v1/authorize`);
   target.searchParams.set("provider", provider);
