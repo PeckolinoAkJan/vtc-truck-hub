@@ -9,7 +9,7 @@ export async function GET() {
        AND channel = 'stable'
        AND download_url IS NOT NULL
        AND length(trim(download_url)) > 0
-     ORDER BY published_at DESC
+     ORDER BY published_at DESC, version DESC
      LIMIT 1`,
   ).first<{
     version: string;
