@@ -7,6 +7,11 @@ import {
   randomId,
   requireVtcPermission,
 } from "@/lib/platform";
+import {
+  ensureFinanceAccount,
+  reconcileApprovedTrips,
+  refreshPayrollReservation,
+} from "@/lib/payroll";
 type Body = {
   action?: string;
   vtcId?: string;
@@ -17,25 +22,6 @@ const clean = (v: unknown, n = 1200) =>
   String(v ?? "")
     .trim()
     .slice(0, n);
-async function ensureAccount(vtcId: string) {
-  const db = platformEnv().DB;
-  let a = await db
-    .prepare(
-      `SELECT id FROM finance_accounts WHERE vtc_id=? AND active=1 ORDER BY created_at LIMIT 1`,
-    )
-    .bind(vtcId)
-    .first<{ id: string }>();
-  if (!a) {
-    a = { id: randomId() };
-    await db
-      .prepare(
-        `INSERT INTO finance_accounts (id,vtc_id,name,type,balance_cents) VALUES (?,?,'Hauptkonto','operating',0)`,
-      )
-      .bind(a.id, vtcId)
-      .run();
-  }
-  return a.id;
-}
 async function resolveVtc(request: Request, requested?: string | null) {
   const user = await getSessionUser(request);
   if (!user) return null;
@@ -65,12 +51,25 @@ export async function GET(request: Request) {
     actor = await requireVtcPermission(request, vtcId, "manage_payroll");
   if (!actor) return apiError("Lohnbürorecht erforderlich", 403);
   const db = platformEnv().DB;
-  await ensureAccount(vtcId);
+  await ensureFinanceAccount(vtcId);
+  try {
+    await reconcileApprovedTrips(vtcId, actor.id);
+  } catch (error) {
+    return apiError(
+      error instanceof Error
+        ? error.message
+        : "Bestehende Fahrten konnten nicht nachberechnet werden",
+      409,
+    );
+  }
   const [accounts, entries, budgets, models, payrolls, lines] =
     await Promise.all([
       db
         .prepare(
-          `SELECT * FROM finance_accounts WHERE vtc_id=? ORDER BY active DESC,name`,
+          `SELECT a.*,
+           COALESCE((SELECT SUM(r.amount_cents) FROM payroll_reservations r WHERE r.account_id=a.id AND r.status='active'),0) AS reserved_cents,
+           a.balance_cents-COALESCE((SELECT SUM(r.amount_cents) FROM payroll_reservations r WHERE r.account_id=a.id AND r.status='active'),0) AS available_cents
+           FROM finance_accounts a WHERE a.vtc_id=? ORDER BY a.active DESC,a.name`,
         )
         .bind(vtcId)
         .all(),
@@ -94,7 +93,10 @@ export async function GET(request: Request) {
         .all(),
       db
         .prepare(
-          `SELECT p.*,u.display_name AS driver FROM payrolls p JOIN users u ON u.id=p.user_id WHERE p.vtc_id=? ORDER BY p.period DESC,p.created_at DESC`,
+          `SELECT p.*,u.display_name AS driver,r.account_id AS reservation_account_id,r.amount_cents AS reserved_cents,r.status AS reservation_status
+           FROM payrolls p JOIN users u ON u.id=p.user_id
+           LEFT JOIN payroll_reservations r ON r.payroll_id=p.id
+           WHERE p.vtc_id=? ORDER BY p.period DESC,p.created_at DESC`,
         )
         .bind(vtcId)
         .all(),
@@ -130,6 +132,12 @@ export async function GET(request: Request) {
       pending: (payrolls.results as Array<any>).filter(
         (p) => p.status === "submitted",
       ).length,
+      reserved: (payrolls.results as Array<any>)
+        .filter((p) => p.reservation_status === "active")
+        .reduce((sum, p) => sum + Number(p.reserved_cents || 0), 0),
+      unfunded: (payrolls.results as Array<any>).filter(
+        (p) => p.status === "submitted" && p.reservation_status === "unfunded",
+      ).length,
     },
   });
 }
@@ -163,17 +171,26 @@ export async function POST(request: Request) {
     return Response.json({ saved: true, id });
   }
   if (b.action === "entry") {
-    const accountId = clean(d.accountId, 100) || (await ensureAccount(vtcId)),
+    const accountId = clean(d.accountId, 100) || (await ensureFinanceAccount(vtcId)),
       amount = Math.round(Number(d.amountCents) || 0),
       description = clean(d.description, 1000),
       category = clean(d.category, 80);
     if (!amount || !description || !category)
       return apiError("Betrag, Kategorie und Beschreibung erforderlich");
     const own = await db
-      .prepare(`SELECT id FROM finance_accounts WHERE id=? AND vtc_id=?`)
+      .prepare(`SELECT id,balance_cents AS balanceCents FROM finance_accounts WHERE id=? AND vtc_id=?`)
       .bind(accountId, vtcId)
-      .first();
+      .first<{id:string;balanceCents:number}>();
     if (!own) return apiError("Konto nicht gefunden", 404);
+    if (amount < 0) {
+      const reservation = await db
+        .prepare(`SELECT COALESCE(SUM(amount_cents),0) AS reservedCents FROM payroll_reservations WHERE account_id=? AND status='active'`)
+        .bind(accountId)
+        .first<{reservedCents:number}>();
+      const available = own.balanceCents - Number(reservation?.reservedCents ?? 0);
+      if (-amount > available)
+        return apiError("Der Betrag ist für eingereichte Löhne reserviert", 409);
+    }
     const id = randomId(),
       center = clean(d.costCenter, 100) || null,
       period = clean(d.period, 7) || new Date().toISOString().slice(0, 7);
@@ -224,6 +241,18 @@ export async function POST(request: Request) {
       .first<any>();
     if (!e)
       return apiError("Buchung nicht gefunden oder bereits storniert", 404);
+    if (Number(e.amount_cents) > 0) {
+      const account = await db
+        .prepare(`SELECT balance_cents AS balanceCents FROM finance_accounts WHERE id=?`)
+        .bind(e.account_id)
+        .first<{balanceCents:number}>();
+      const reservation = await db
+        .prepare(`SELECT COALESCE(SUM(amount_cents),0) AS reservedCents FROM payroll_reservations WHERE account_id=? AND status='active'`)
+        .bind(e.account_id)
+        .first<{reservedCents:number}>();
+      if (Number(e.amount_cents) > Number(account?.balanceCents ?? 0) - Number(reservation?.reservedCents ?? 0))
+        return apiError("Diese Einnahme kann nicht storniert werden, weil der Betrag für Löhne reserviert ist", 409);
+    }
     const id = randomId();
     await db.batch([
       db
@@ -328,7 +357,8 @@ export async function POST(request: Request) {
       )
       .bind(b.id, b.id, b.id, b.id)
       .run();
-    return Response.json({ saved: true });
+    const reservation = await refreshPayrollReservation(b.id);
+    return Response.json({ saved: true, reservation });
   }
   if (b.action === "approvePayroll" && b.id) {
     const p = await db
@@ -343,7 +373,20 @@ export async function POST(request: Request) {
         "Nur eingereichte Abrechnungen können freigegeben werden",
         409,
       );
-    const accountId = clean(d.accountId, 100) || (await ensureAccount(vtcId));
+    let reservation = await db
+      .prepare(`SELECT account_id AS accountId,amount_cents AS amountCents,status FROM payroll_reservations WHERE payroll_id=?`)
+      .bind(p.id)
+      .first<{accountId:string;amountCents:number;status:string}>();
+    if (!reservation || reservation.status !== "active" || reservation.amountCents !== p.netCents) {
+      await refreshPayrollReservation(p.id, clean(d.accountId, 100) || null);
+      reservation = await db
+        .prepare(`SELECT account_id AS accountId,amount_cents AS amountCents,status FROM payroll_reservations WHERE payroll_id=?`)
+        .bind(p.id)
+        .first<{accountId:string;amountCents:number;status:string}>();
+    }
+    if (!reservation || reservation.status !== "active")
+      return apiError("Das VTC-Konto hat für diese Lohnzahlung nicht genügend verfügbares Guthaben", 409);
+    const accountId = reservation.accountId;
     const sourceAccount = await db
       .prepare(
         `SELECT id,balance_cents AS balanceCents FROM finance_accounts WHERE id=? AND vtc_id=? AND active=1`,
@@ -402,6 +445,9 @@ export async function POST(request: Request) {
           `UPDATE payrolls SET status='paid',approved_by=?,approved_at=CURRENT_TIMESTAMP,paid_at=CURRENT_TIMESTAMP WHERE id=? AND status='submitted'`,
         )
         .bind(actor.id, p.id),
+      db
+        .prepare(`UPDATE payroll_reservations SET status='settled',updated_at=CURRENT_TIMESTAMP WHERE payroll_id=? AND status='active'`)
+        .bind(p.id),
     ]);
     await audit(
       "payroll.paid",

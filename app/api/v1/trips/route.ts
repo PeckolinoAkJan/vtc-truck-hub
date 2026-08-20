@@ -7,6 +7,7 @@ import {
   randomId,
   requireVtcPermission,
 } from "@/lib/platform";
+import {createOrUpdateTripPayroll,removeTripAccounting} from "@/lib/payroll";
 type Body = {
   action?: string;
   vtcId?: string;
@@ -50,8 +51,8 @@ export async function GET(request: Request) {
     game = url.searchParams.get("game"),
     status = url.searchParams.get("status"),
     q = url.searchParams.get("q");
-  let sql = `SELECT t.id,t.vtc_id AS vtcId,t.user_id AS userId,u.display_name AS driver,t.game,t.mode,t.source_city AS sourceCity,t.destination_city AS destinationCity,t.cargo,t.distance_km AS distanceKm,t.fuel_liters AS fuelLiters,t.damage,t.income,t.status,t.started_at AS startedAt,t.completed_at AS completedAt,t.telemetry_source AS telemetrySource,r.status AS reviewStatus,r.reason AS reviewReason FROM trips t LEFT JOIN users u ON u.id=t.user_id LEFT JOIN trip_reviews r ON r.trip_id=t.id WHERE t.vtc_id=?`,
-    args: unknown[] = [vtcId];
+  let sql = `SELECT t.id,t.vtc_id AS vtcId,t.user_id AS userId,u.display_name AS driver,t.game,t.mode,t.source_city AS sourceCity,t.destination_city AS destinationCity,t.cargo,t.distance_km AS distanceKm,t.fuel_liters AS fuelLiters,t.damage,t.income,t.status,t.started_at AS startedAt,t.completed_at AS completedAt,t.telemetry_source AS telemetrySource,r.status AS reviewStatus,r.reason AS reviewReason FROM trips t LEFT JOIN users u ON u.id=t.user_id LEFT JOIN trip_reviews r ON r.trip_id=t.id WHERE t.vtc_id=?`;
+  const args: unknown[] = [vtcId];
   if (mine) {
     sql += ` AND t.user_id=?`;
     args.push(user.id);
@@ -277,6 +278,16 @@ export async function POST(request: Request) {
     if (!actor) return apiError("Fahrtenprüfrecht erforderlich", 403);
     if (!["approved", "rejected", "corrected"].includes(b.status))
       return apiError("Ungültiger Prüfstatus");
+    try {
+      if (b.status === "approved")
+        await createOrUpdateTripPayroll(trip!.id, actor.id, { bookIncome: true });
+      else await removeTripAccounting(trip!.id, actor.id);
+    } catch (error) {
+      return apiError(
+        error instanceof Error ? error.message : "Fahrt konnte nicht abgerechnet werden",
+        409,
+      );
+    }
     await db.batch([
       db
         .prepare(
@@ -306,7 +317,22 @@ export async function POST(request: Request) {
   if (b.action === "massReview" && b.tripIds?.length) {
     const actor = await requireVtcPermission(request, vtcId, "review_trips");
     if (!actor) return apiError("Fahrtenprüfrecht erforderlich", 403);
-    for (const id of b.tripIds.slice(0, 200))
+    for (const id of b.tripIds.slice(0, 200)) {
+      const ownTrip = await db
+        .prepare(`SELECT id FROM trips WHERE id=? AND vtc_id=?`)
+        .bind(id, vtcId)
+        .first();
+      if (!ownTrip) continue;
+      try {
+        await createOrUpdateTripPayroll(id, actor.id, { bookIncome: true });
+      } catch (error) {
+        return apiError(
+          error instanceof Error
+            ? error.message
+            : "Fahrt konnte nicht abgerechnet werden",
+          409,
+        );
+      }
       await db.batch([
         db
           .prepare(
@@ -317,6 +343,7 @@ export async function POST(request: Request) {
           .prepare(`UPDATE trips SET status='approved' WHERE id=? AND vtc_id=?`)
           .bind(id, vtcId),
       ]);
+    }
     await audit(
       "trip.mass_approved",
       "trip",

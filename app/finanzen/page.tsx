@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import "./finance.css";
 type Data = {
   vtc: { id: string; name: string; tag: string };
   accounts: any[];
@@ -13,6 +14,8 @@ type Data = {
     expenses: number;
     profit: number;
     pending: number;
+    reserved: number;
+    unfunded: number;
   };
 };
 const money = (v: number) =>
@@ -73,10 +76,16 @@ export default function Finance() {
           <small>FREIGABEN</small>
           <b>{data.summary.pending}</b>
         </article>
+        <article>
+          <small>FÜR LÖHNE GESPERRT</small>
+          <b>{money(data.summary.reserved)}</b>
+          {data.summary.unfunded > 0 && <span>{data.summary.unfunded} nicht gedeckt</span>}
+        </article>
         {data.accounts.map((a) => (
           <article key={a.id}>
-            <small>{a.name}</small>
-            <b>{money(a.balance_cents)}</b>
+            <small>{a.name} · VERFÜGBAR</small>
+            <b>{money(a.available_cents)}</b>
+            <span>Gesamt {money(a.balance_cents)} · gesperrt {money(a.reserved_cents)}</span>
           </article>
         ))}
       </section>
@@ -101,6 +110,7 @@ export default function Finance() {
       {tab === "Abrechnungen" && (
         <section className="finance-table">
           <h2>Fahrerabrechnungen</h2>
+          {!data.payrolls.length && <p className="finance-empty">Noch keine eingereichten Fahrerabrechnungen.</p>}
           {data.payrolls.map((p) => (
             <article key={p.id}>
               <div>
@@ -112,8 +122,16 @@ export default function Finance() {
                   {money(p.deductions_cents)} · Netto {money(p.net_cents)}
                 </span>
               </div>
-              <em>{p.status}</em>
-              {p.status === "submitted" && (
+              <em>
+                {p.status === "paid"
+                  ? "Ausgezahlt"
+                  : p.reservation_status === "active"
+                    ? `Reserviert · ${money(p.reserved_cents)}`
+                    : p.reservation_status === "unfunded"
+                      ? "Nicht gedeckt"
+                      : p.status}
+              </em>
+              {p.status === "submitted" && p.reservation_status === "active" && (
                 <button
                   onClick={() =>
                     act({
@@ -125,6 +143,9 @@ export default function Finance() {
                 >
                   Freigeben & auszahlen
                 </button>
+              )}
+              {p.status === "submitted" && p.reservation_status === "unfunded" && (
+                <strong className="finance-warning">Kontoguthaben reicht für die Reservierung nicht aus.</strong>
               )}
               <details>
                 <summary>Positionen / Korrektur</summary>
@@ -316,6 +337,7 @@ export default function Finance() {
                   </span>
                 </div>
                 <strong>{money(a.balance_cents)}</strong>
+                <span>Gesperrt {money(a.reserved_cents)} · verfügbar {money(a.available_cents)}</span>
               </article>
             ))}
           </div>
