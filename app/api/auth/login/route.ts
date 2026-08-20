@@ -8,6 +8,7 @@ import {
   verifyPassword,
   verifyTotp,
 } from "@/lib/platform";
+import { supabasePasswordSignIn, syncSupabaseMemberships, syncSupabaseUser } from "@/lib/supabase-auth";
 export async function POST(request: Request) {
   await ensureDatabase();
   const body = (await request.json()) as {
@@ -19,6 +20,15 @@ export async function POST(request: Request) {
     db = platformEnv().DB;
   if (!email || !body.password)
     return apiError("E-Mail und Passwort erforderlich");
+  const supabaseLogin = await supabasePasswordSignIn(email, body.password);
+  if (supabaseLogin?.ok) {
+    const synced = await syncSupabaseUser(supabaseLogin.user);
+    await syncSupabaseMemberships(supabaseLogin.accessToken, supabaseLogin.user.id, synced.id);
+    await audit("user.login", "session", null, synced.id, { method: "supabase-password" });
+    return Response.json({ user: synced }, {
+      headers: { "Set-Cookie": await createSession(synced.id, request) },
+    });
+  }
   const user = await db
     .prepare(
       `SELECT u.id,u.email,u.display_name AS displayName,u.password_hash AS passwordHash,a.two_factor_secret AS twoFactorSecret,a.recovery_codes AS recoveryCodes,a.failed_logins AS failedLogins,a.locked_until AS lockedUntil FROM users u LEFT JOIN account_security a ON a.user_id=u.id WHERE u.email=?`,

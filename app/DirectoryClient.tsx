@@ -47,8 +47,20 @@ export default function DirectoryClient() {
     try {
       setFavorites(JSON.parse(localStorage.getItem("vtc-favorites") || "[]"));
     } catch {}
+    const oauthHash = new URLSearchParams(location.hash.replace(/^#/, ""));
+    const oauthToken = oauthHash.get("access_token");
+    const finishOAuth = oauthToken
+      ? fetch("/api/auth/supabase/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accessToken: oauthToken }),
+        }).then((r) => {
+          if (r.ok) history.replaceState({}, "", "/");
+          return r.ok;
+        })
+      : Promise.resolve(false);
     Promise.all([
-      fetch("/api/auth/me").then((r) => r.ok),
+      finishOAuth.then((oauthSignedIn) => oauthSignedIn || fetch("/api/auth/me").then((r) => r.ok)),
       fetch("/api/v1/client-download").then((r) => r.ok ? r.json() : null),
     ]).then(([signedIn, download]) => {
       setAuthenticated(signedIn);

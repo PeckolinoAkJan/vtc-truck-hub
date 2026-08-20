@@ -139,6 +139,7 @@ export async function GET(request: Request) {
     sort = url.searchParams.get("sort") ?? "recommended";
   let sql = `SELECT v.id,v.slug,v.name,v.tag,v.description,v.country,v.city,v.games,v.languages,v.timezone,v.truckersmp_id AS truckersmpId,v.verified,v.applications_open AS applicationsOpen,v.minimum_age AS minimumAge,v.driver_count AS driverCount,v.total_km AS totalKm,v.created_at AS createdAt,p.main_language AS mainLanguage,p.partner_seeking AS partnerSeeking,p.beginner_friendly AS beginnerFriendly,p.driving_modes AS drivingModes,p.public_status AS publicStatus,p.primary_color AS primaryColor,p.secondary_color AS secondaryColor,p.logo_upload_id AS logoUploadId,p.header_upload_id AS headerUploadId,(SELECT COUNT(*) FROM vtc_follows f WHERE f.vtc_id=v.id) followers,(SELECT COALESCE(AVG(r.rating),0) FROM vtc_reviews r WHERE r.vtc_id=v.id AND r.status='approved') rating,(SELECT COUNT(*) FROM trips t WHERE t.vtc_id=v.id AND t.started_at>=datetime('now','-30 days')) activity FROM vtcs v LEFT JOIN vtc_profiles p ON p.vtc_id=v.id WHERE 1=1`;
   const args: unknown[] = [];
+  sql += ` AND v.id NOT IN ('vtc-ngl','vtc-ast','vtc-r66')`;
   if (game) {
     sql += ` AND v.games LIKE ?`;
     args.push(`%${game}%`);

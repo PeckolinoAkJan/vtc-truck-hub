@@ -12,6 +12,23 @@ export default function Account() {
     [mode, setMode] = useState<"login" | "register">("login"),
     [message, setMessage] = useState("");
   useEffect(() => {
+    const authHash = new URLSearchParams(location.hash.replace(/^#/, ""));
+    const accessToken = authHash.get("access_token");
+    if (accessToken) {
+      setMessage("Google-/Discord-Anmeldung wird bestätigt …");
+      fetch("/api/auth/supabase/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken }),
+      }).then(async (r) => ({ ok: r.ok, data: await r.json() }))
+        .then(({ ok, data }) => {
+          history.replaceState({}, "", "/konto");
+          if (!ok) return setMessage(data.error ?? "Anmeldung fehlgeschlagen");
+          setUser(data.user);
+          setMessage("Erfolgreich angemeldet.");
+        }).catch(() => setMessage("Anmeldung konnte nicht abgeschlossen werden."));
+      return;
+    }
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setUser(d.user));
@@ -58,6 +75,7 @@ export default function Account() {
             />
             <div className="connected-box">
               <strong>Deine Verknüpfungen</strong>
+              <a href="/api/auth/google/start">Google verbinden →</a>
               <a href="/api/auth/discord/start">Discord verbinden →</a>
               <a href="/api/auth/steam/start">Steam verbinden →</a>
               <a href="/konto/sicherheit">Sicherheit, Geräte & Datenschutz →</a>
@@ -79,6 +97,10 @@ export default function Account() {
             </h1>
             <p>Ein Konto für alle Speditionen, Fahrten und Events.</p>
             <div className="oauth-grid">
+              <a href="/api/auth/google/start">
+                <b>GOOGLE</b>
+                <span>Mit Google anmelden</span>
+              </a>
               <a href="/api/auth/steam/start">
                 <b>STEAM</b>
                 <span>Mit Steam anmelden</span>

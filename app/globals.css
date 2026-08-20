@@ -1,4 +1,6 @@
 @import "tailwindcss";
+body .oauth-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:520px){body .oauth-grid{grid-template-columns:1fr}}
 
 .admin-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.admin-columns .admin-list{margin:0;min-width:0}.admin-columns .admin-list:nth-child(3){grid-column:1/-1}.admin-columns .admin-form{margin-top:18px}.admin-columns select,.admin-columns input,.admin-columns textarea{border:1px solid #d1dcdf;padding:9px}.admin-columns article{flex-wrap:wrap}@media(max-width:900px){.admin-columns{grid-template-columns:1fr}.admin-columns .admin-list:nth-child(3){grid-column:auto}}
 
