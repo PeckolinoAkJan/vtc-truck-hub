@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import "./globals.css";
 import "./security.css";
 import "./brand-refresh.css";
+import "./module-refresh.css";
 import PwaRegister from "./PwaRegister";
 import VtcModuleNav from "./components/VtcModuleNav";
 

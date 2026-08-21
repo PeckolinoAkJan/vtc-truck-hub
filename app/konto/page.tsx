@@ -16,6 +16,8 @@ type User = {
   locale?: string | null;
   timezone?: string | null;
   publicDisplayName?: number | boolean;
+  liveMapPublicVisible?: number | boolean;
+  liveMapShowExactToVtc?: number | boolean;
 };
 export default function Account() {
   const [user, setUser] = useState<User | null>(null),
@@ -75,7 +77,7 @@ export default function Account() {
   async function saveProfile(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const values = Object.fromEntries(new FormData(e.currentTarget));
-    const res = await fetch("/api/auth/me", {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({...values,publicDisplayName:values.publicDisplayName==="true"})});
+    const res = await fetch("/api/auth/me", {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({...values,publicDisplayName:values.publicDisplayName==="true",liveMapPublicVisible:values.liveMapPublicVisible==="true",liveMapShowExactToVtc:values.liveMapShowExactToVtc==="true"})});
     const json = await res.json();
     if (!res.ok) return setMessage(json.error ?? "Profil konnte nicht gespeichert werden.");
     const fresh = await fetch("/api/auth/me").then(r=>r.json());
@@ -113,6 +115,8 @@ export default function Account() {
               <div className="account-profile-grid"><label>Land<input name="country" defaultValue={user.country??"Deutschland"} autoComplete="country-name" /></label><label>Telefon<input name="phone" defaultValue={user.phone??""} type="tel" autoComplete="tel" /></label></div>
               <div className="account-profile-grid"><label>Sprache<select name="locale" defaultValue={user.locale??"de"}><option value="de">Deutsch</option><option value="en">English</option></select></label><label>Zeitzone<input name="timezone" defaultValue={user.timezone??"Europe/Berlin"} /></label></div>
               <label className="account-consent"><input name="publicDisplayName" type="checkbox" value="true" defaultChecked={user.publicDisplayName!==0} /> Anzeigename im Fahrerprofil öffentlich zeigen</label>
+              <label className="account-consent"><input name="liveMapPublicVisible" type="checkbox" value="true" defaultChecked={user.liveMapPublicVisible!==0} /> Meine Position anonymisiert und 10 Minuten verzögert öffentlich anzeigen</label>
+              <label className="account-consent"><input name="liveMapShowExactToVtc" type="checkbox" value="true" defaultChecked={user.liveMapShowExactToVtc!==0} /> Meine genaue Live-Position für Mitglieder meiner Spedition anzeigen</label>
               <p className="privacy-note">Adresse und Telefonnummer bleiben privat und sind nicht auf öffentlichen Fahrerprofilen sichtbar.</p>
               <button className="primary">Profil speichern</button>
             </form>

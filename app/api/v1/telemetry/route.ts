@@ -20,6 +20,8 @@ type Packet = {
   gameX?: number;
   gameY?: number;
   gameZ?: number;
+  coordinateAccuracy?: string;
+  projectionProfile?: string;
   heading?: number;
   speedKph?: number;
   rpm?: number;
@@ -80,11 +82,8 @@ type IncidentRow = {
 };
 
 async function authorized(request: Request) {
-  const configuredValue = platformEnv().TELEMETRY_API_KEY?.trim(),
-    configured = configuredValue && configuredValue !== "demo-client-key" ? configuredValue : undefined,
-    supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!supplied) return null;
-  if (configured && supplied === configured) return { vtcId: null, userId: null, keyId: null };
   const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(supplied))),b=>b.toString(16).padStart(2,"0")).join("");
   const key=await platformEnv().DB.prepare(`SELECT id,vtc_id AS vtcId,user_id AS userId,scopes FROM api_keys WHERE secret_hash=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP)`).bind(digest).first<{id:string;vtcId:string;userId:string|null;scopes:string}>();
   if(!key)return null;const scopes=JSON.parse(key.scopes||"[]") as string[];
@@ -195,17 +194,12 @@ async function scoreSpeed(p: Packet, tripId: string, recorded: string) {
         .run();
     if (Number(insert.meta.changes) > 0) added = multiplier;
   }
-  const telemetryInsert=await db
+  await db
     .prepare(
       `UPDATE speed_incidents SET last_seen_at=?,peak_speed_kph=MAX(peak_speed_kph,?),last_bucket=MAX(last_bucket,?),points=points+? WHERE id=?`,
     )
     .bind(recorded, speed, bucket, added, incident.id)
     .run();
-  const telemetryId=Number(telemetryInsert.meta.last_row_id??0);
-  if(telemetryId>0)await db.batch([
-    db.prepare(`INSERT INTO telemetry_details (telemetry_id,vtc_id,user_id,payload,recorded_at) VALUES (?,?,?,?,?)`).bind(telemetryId,p.vtcId,p.userId,JSON.stringify(p),recorded),
-    db.prepare(`DELETE FROM telemetry_details WHERE recorded_at<datetime('now','-30 days')`),
-  ]);
   return {
     active: speed >= 95,
     added,
@@ -315,8 +309,9 @@ export async function POST(request: Request) {
       "Auffällige Geschwindigkeit – manuelle Prüfung erforderlich",
       422,
     );
-  const db = platformEnv().DB,
-    recorded = p.recordedAt ?? new Date().toISOString(),
+  const suppliedRecordedAt=p.recordedAt?new Date(p.recordedAt):null,
+    recorded=suppliedRecordedAt&&!Number.isNaN(suppliedRecordedAt.getTime())?suppliedRecordedAt.toISOString():new Date().toISOString(),
+    db = platformEnv().DB,
     jobKey = stableJobKey(p),
     event = p.event ?? "telemetry";
   let job = jobKey.replaceAll("|", "")
@@ -543,7 +538,7 @@ export async function POST(request: Request) {
       ]);
     }
   }
-  await db
+  const telemetryInsert=await db
     .prepare(
       `INSERT INTO telemetry (trip_id,vtc_id,user_id,game,latitude,longitude,heading,speed_kph,rpm,fuel_liters,truck,cargo,source_city,destination_city,server,recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
@@ -566,6 +561,30 @@ export async function POST(request: Request) {
       recorded,
     )
     .run();
+  const telemetryId=Number(telemetryInsert.meta.last_row_id??0);
+  if(telemetryId>0)await db.batch([
+    db.prepare(`INSERT INTO telemetry_details (telemetry_id,vtc_id,user_id,payload,recorded_at) VALUES (?,?,?,?,?)`).bind(telemetryId,p.vtcId,p.userId,JSON.stringify(p),recorded),
+    db.prepare(`DELETE FROM telemetry_details WHERE datetime(recorded_at)<datetime('now','-30 days')`),
+  ]);
+  const liveActive=!['game.exited','client.disconnected'].includes(event);
+  await db.batch([
+    db.prepare(
+      `INSERT INTO live_positions (user_id,vtc_id,trip_id,game,latitude,longitude,game_x,game_y,game_z,coordinate_accuracy,projection_profile,heading,speed_kph,truck,cargo,source_city,destination_city,server,active,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(user_id) DO UPDATE SET
+         vtc_id=excluded.vtc_id,trip_id=excluded.trip_id,game=excluded.game,latitude=excluded.latitude,longitude=excluded.longitude,
+         game_x=excluded.game_x,game_y=excluded.game_y,game_z=excluded.game_z,coordinate_accuracy=excluded.coordinate_accuracy,
+         projection_profile=excluded.projection_profile,heading=excluded.heading,speed_kph=excluded.speed_kph,truck=excluded.truck,
+         cargo=excluded.cargo,source_city=excluded.source_city,destination_city=excluded.destination_city,server=excluded.server,
+         active=excluded.active,updated_at=excluded.updated_at
+       WHERE excluded.updated_at>=live_positions.updated_at`,
+    ).bind(
+      p.userId,p.vtcId,tripId,p.game,p.latitude,p.longitude,p.gameX??null,p.gameY??null,p.gameZ??null,
+      p.coordinateAccuracy?.slice(0,40)??'unknown',p.projectionProfile?.slice(0,80)??null,p.heading??0,p.speedKph??0,
+      p.truck??null,p.cargo??null,p.sourceCity??null,p.destinationCity??null,p.server??null,liveActive?1:0,recorded,
+    ),
+    db.prepare(`DELETE FROM live_positions WHERE datetime(updated_at)<datetime('now','-1 day')`),
+  ]);
   if (deliveredNow) await notifyDiscordDelivery(tripId, p.vtcId);
   const points =
     job && !["cancelled", "pending_driver"].includes(lifecycle)

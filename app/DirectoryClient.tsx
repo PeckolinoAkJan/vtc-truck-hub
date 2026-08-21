@@ -152,6 +152,7 @@ export default function DirectoryClient() {
             </a>
           )}
           {isFounder && <a className="login" href="/admin">Administration</a>}
+          {authenticated && <a className="login" href="/dashboard">Dashboard</a>}
           <a className="login" href="/konto">
             {authenticated ? "Mein Konto" : "Anmelden"}
           </a>

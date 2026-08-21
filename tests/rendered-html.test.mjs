@@ -156,3 +156,39 @@ test("desktop login is gated and telemetry credentials are account-bound", async
   assert.match(credentials, /vtc-truck-hub:telemetry:\$\{userId\}/);
   assert.match(telemetry, /Keine aktive Mitgliedschaft für diese Spedition/);
 });
+
+test("live map uses projected SCS telemetry without invented drivers", async () => {
+  const [mapPage, liveApi, telemetryApi, projector, client, platform, payroll] = await Promise.all([
+    readFile(new URL("../app/live-map/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/live/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/telemetry/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../desktop-client/ConvoyHub.Client/ScsCoordinateProjector.cs", import.meta.url), "utf8"),
+    readFile(new URL("../desktop-client/ConvoyHub.Client/MainWindow.xaml.cs", import.meta.url), "utf8"),
+    readFile(new URL("../lib/platform.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/payroll/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(projector, /Lambert conformal/);
+  assert.match(projector, /ets2-base-lambert-v1/);
+  assert.match(projector, /ats-base-lambert-v1/);
+  assert.match(client, /ScsCoordinateProjector\.ProjectWithFallback/);
+  assert.match(client, /coordinateAccuracy=mapPosition\.Accuracy/);
+  assert.match(client, /projectionProfile=mapPosition\.Profile/);
+  assert.match(client, /offline-queue\.jsonl/);
+  assert.match(client, /Gespeicherter Auftrag erkannt und fortgesetzt/);
+  assert.match(client, /ConfirmInvoiceAsync/);
+  assert.match(client, /request\.Headers\.Authorization=new AuthenticationHeaderValue\("Bearer",settings\.ApiKey\)/);
+  assert.match(telemetryApi, /ON CONFLICT\(user_id\) DO UPDATE/);
+  assert.match(telemetryApi, /excluded\.updated_at>=live_positions\.updated_at/);
+  assert.match(telemetryApi, /const telemetryInsert=await db/);
+  assert.doesNotMatch(telemetryApi, /supplied === configured/);
+  assert.match(platform, /CREATE TABLE IF NOT EXISTS live_positions/);
+  assert.match(liveApi, /internal-exact/);
+  assert.match(liveApi, /public-delayed-and-rounded/);
+  assert.match(liveApi, /public_visible/);
+  assert.match(mapPage, /Fahrer verfolgen/);
+  assert.match(mapPage, /KEINE AKTIVEN FAHRER/);
+  assert.doesNotMatch(mapPage, /LoadProbe|simulation|simulated/i);
+  assert.match(payroll, /confirmTrip/);
+  assert.match(payroll, /personalClientKeyName/);
+  assert.match(payroll, /authenticatedUser\(request\)/);
+});

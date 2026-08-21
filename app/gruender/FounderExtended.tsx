@@ -14,11 +14,42 @@ export default function FounderExtended({ mode, data, busy, onAction }: Props) {
 
   if (mode === "Benutzer & Speditionen") return <div className="admin-columns">
     <MembershipManager busy={busy} />
-    <section className="admin-list"><h2>Alle Benutzer</h2>{data.users.length ? data.users.map((user: any) => {
-      const protectedFounder = String(user.email ?? "").toLowerCase() === String(data.founder.email).toLowerCase();
-      return <article key={user.id}><div><strong>{user.displayName || "Unbenannter Benutzer"}{protectedFounder ? " · Gründerkonto" : ""}</strong><span>{user.email || "OAuth-Konto"} · {user.sessions} Sitzungen · {user.memberships} Mitgliedschaften</span></div>{protectedFounder ? <b>GESCHÜTZT</b> : <button disabled={busy} onClick={() => confirm(`Benutzer ${user.displayName || user.email} wirklich sperren und alle Sitzungen beenden?`) && act({ action: "suspendUser", id: user.id, data: { reason: "Durch Plattformgründer gesperrt" } }, "Benutzer gesperrt und Sitzungen beendet.")}>Sperren & abmelden</button>}</article>;
-    }) : <p>Keine Benutzer vorhanden.</p>}</section>
-    <section className="admin-list"><h2>Alle Speditionen</h2>{data.vtcs.length ? data.vtcs.map((vtc: any) => <article key={vtc.id}><div><strong>{vtc.name} ({vtc.tag}) {vtc.verified ? "✓" : ""}</strong><span>/{vtc.slug} · {vtc.publicStatus || "public"} · {vtc.reports} Meldungen</span></div><button disabled={busy} onClick={() => act({ action: "verifyVtc", id: vtc.id, status: vtc.verified ? "unverified" : "verified" }, vtc.verified ? "Verifizierung entfernt." : "Spedition verifiziert.")}>{vtc.verified ? "Verifizierung entfernen" : "Verifizieren"}</button><select aria-label={`Sichtbarkeit von ${vtc.name}`} disabled={busy} defaultValue={vtc.publicStatus || "public"} onChange={(event) => act({ action: "setVtcStatus", id: vtc.id, status: event.target.value }, "Speditionsstatus gespeichert.")}><option value="public">Öffentlich</option><option value="private">Privat</option><option value="blocked">Gesperrt</option></select></article>) : <p>Keine Speditionen vorhanden.</p>}</section>
+    <section className="admin-list">
+      <h2>Alle Benutzer</h2>
+      <p>Konten mit aktiver Mitgliedschaft, Fahrten oder Abrechnungen werden aus Datenschutz- und Nachweisgründen nicht gelöscht. Ausgetretene Konten ohne Historie können entfernt, alle anderen sicher gesperrt werden.</p>
+      {data.users.length ? data.users.map((user: any) => {
+        const protectedFounder = String(user.email ?? "").toLowerCase() === String(data.founder.email).toLowerCase();
+        const identity = user.email || user.displayName || user.id;
+        return <article key={user.id}>
+          <div>
+            <strong>{user.displayName || "Unbenannter Benutzer"}{protectedFounder ? " · Gründerkonto" : ""}</strong>
+            <span>{user.email || "OAuth-Konto"} · {user.sessions} Sitzungen · {user.memberships} Mitgliedschaften</span>
+          </div>
+          {protectedFounder ? <b>GESCHÜTZT</b> : <div className="admin-row-actions">
+            <button disabled={busy} onClick={() => confirm(`Benutzer ${identity} wirklich sperren und alle Sitzungen beenden?`) && act({ action: "suspendUser", id: user.id, data: { reason: "Durch Plattformgründer gesperrt" } }, "Benutzer gesperrt und Sitzungen beendet.")}>Sperren & abmelden</button>
+            <button className="danger" disabled={busy} onClick={() => {
+              const confirmation = prompt(`Nur vollständig inaktive Konten ohne Historie können gelöscht werden. Zur Bestätigung bitte exakt „${identity}“ eingeben:`);
+              if (confirmation !== null) act({ action: "deleteUser", id: user.id, data: { confirmation } }, "Inaktiver Benutzer wurde dauerhaft gelöscht.");
+            }}>Inaktiven Benutzer löschen</button>
+          </div>}
+        </article>;
+      }) : <p>Keine Benutzer vorhanden.</p>}
+    </section>
+    <section className="admin-list">
+      <h2>Alle Speditionen</h2>
+      <p>Zum Löschen muss eine inaktive Spedition zuerst auf „Gesperrt“ gesetzt werden. Aktive Mitgliedschaften sowie Fahrten- oder Finanzhistorie blockieren die Löschung.</p>
+      {data.vtcs.length ? data.vtcs.map((vtc: any) => <article key={vtc.id}>
+        <div><strong>{vtc.name} ({vtc.tag}) {vtc.verified ? "✓" : ""}</strong><span>/{vtc.slug} · {vtc.publicStatus || "public"} · {vtc.reports} Meldungen</span></div>
+        <div className="admin-row-actions">
+          <button disabled={busy} onClick={() => act({ action: "verifyVtc", id: vtc.id, status: vtc.verified ? "unverified" : "verified" }, vtc.verified ? "Verifizierung entfernt." : "Spedition verifiziert.")}>{vtc.verified ? "Verifizierung entfernen" : "Verifizieren"}</button>
+          <select aria-label={`Sichtbarkeit von ${vtc.name}`} disabled={busy} defaultValue={vtc.publicStatus || "public"} onChange={(event) => act({ action: "setVtcStatus", id: vtc.id, status: event.target.value }, "Speditionsstatus gespeichert.")}><option value="public">Öffentlich</option><option value="private">Privat</option><option value="blocked">Gesperrt</option></select>
+          <button className="danger" disabled={busy || vtc.publicStatus !== "blocked"} title={vtc.publicStatus !== "blocked" ? "Spedition zuerst sperren" : "Leere Spedition löschen"} onClick={() => {
+            const confirmation = prompt(`Diese Aktion ist endgültig. Bitte den vollständigen Speditionsnamen „${vtc.name}“ eingeben:`);
+            if (confirmation !== null) act({ action: "deleteVtc", id: vtc.id, data: { confirmation } }, "Inaktive Spedition wurde dauerhaft gelöscht.");
+          }}>Inaktive Spedition löschen</button>
+        </div>
+      </article>) : <p>Keine Speditionen vorhanden.</p>}
+    </section>
   </div>;
 
   if (mode === "Moderation") return <div className="admin-columns">
