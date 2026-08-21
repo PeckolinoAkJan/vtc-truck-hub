@@ -10,6 +10,7 @@ import {
 import {
   ensureFinanceAccount,
   reconcileApprovedTrips,
+  reconcilePendingDriverTrips,
   refreshPayrollReservation,
 } from "@/lib/payroll";
 type Body = {
@@ -53,6 +54,7 @@ export async function GET(request: Request) {
   const db = platformEnv().DB;
   await ensureFinanceAccount(vtcId);
   try {
+    await reconcilePendingDriverTrips(vtcId);
     await reconcileApprovedTrips(vtcId, actor.id);
   } catch (error) {
     return apiError(

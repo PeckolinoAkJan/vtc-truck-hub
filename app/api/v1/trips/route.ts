@@ -7,7 +7,7 @@ import {
   randomId,
   requireVtcPermission,
 } from "@/lib/platform";
-import {createOrUpdateTripPayroll,removeTripAccounting} from "@/lib/payroll";
+import {createOrUpdateTripPayroll,removeTripAccounting,submitDeliveredTrip} from "@/lib/payroll";
 type Body = {
   action?: string;
   vtcId?: string;
@@ -279,9 +279,10 @@ export async function POST(request: Request) {
     if (!["approved", "rejected", "corrected"].includes(b.status))
       return apiError("Ungültiger Prüfstatus");
     try {
-      if (b.status === "approved")
+      if (b.status === "approved") {
+        if (trip!.status === "pending_driver") await submitDeliveredTrip(trip!.id);
         await createOrUpdateTripPayroll(trip!.id, actor.id, { bookIncome: true });
-      else await removeTripAccounting(trip!.id, actor.id);
+      } else await removeTripAccounting(trip!.id, actor.id);
     } catch (error) {
       return apiError(
         error instanceof Error ? error.message : "Fahrt konnte nicht abgerechnet werden",
@@ -324,6 +325,11 @@ export async function POST(request: Request) {
         .first();
       if (!ownTrip) continue;
       try {
+        const pendingTrip = await db
+          .prepare(`SELECT status FROM trips WHERE id=? AND vtc_id=?`)
+          .bind(id, vtcId)
+          .first<{ status: string }>();
+        if (pendingTrip?.status === "pending_driver") await submitDeliveredTrip(id);
         await createOrUpdateTripPayroll(id, actor.id, { bookIncome: true });
       } catch (error) {
         return apiError(

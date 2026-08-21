@@ -1,4 +1,5 @@
 import { deliveryMessage, discordRequest } from "@/lib/discord";
+import { submitDeliveredTrip } from "@/lib/payroll";
 import {
   apiError,
   audit,
@@ -466,44 +467,55 @@ export async function POST(request: Request) {
     } else if (event === "job.delivered") {
       lifecycle = "pending_driver";
       deliveredNow = job.status !== "delivered";
-      await db.batch([
-        db
-          .prepare(
-            `UPDATE trip_jobs SET status='delivered',delivered_at=?,last_seen_at=?,last_odometer_km=? WHERE id=?`,
-          )
-          .bind(recorded, recorded, p.odometerKm ?? null, job.id),
-        db
-          .prepare(
-            `UPDATE trips SET status='pending_driver',completed_at=?,distance_km=?,income=?,damage=MAX(damage,?) WHERE id=?`,
-          )
-          .bind(
-            recorded,
-            distance,
-            (p.gameIncomeCents ?? 0) / 100,
-            Math.max(p.truckDamage ?? 0, p.trailerDamage ?? 0) * 100,
-            tripId,
-          ),
-        db
-          .prepare(
-            `INSERT OR IGNORE INTO trip_reviews (id,trip_id,status) VALUES (?,?,'pending_driver')`,
-          )
-          .bind(randomId(), tripId),
-        db
-          .prepare(
-            `UPDATE dispatch_orders SET status='completed',updated_at=CURRENT_TIMESTAMP WHERE trip_id=? AND status='started'`,
-          )
-          .bind(tripId),
-        db
-          .prepare(
-            `INSERT INTO dispatch_history (id,order_id,actor_id,action,detail) SELECT ?,id,?,'completed',? FROM dispatch_orders WHERE trip_id=?`,
-          )
-          .bind(
-            randomId(),
-            p.userId,
-            JSON.stringify({ tripId, distance }),
-            tripId,
-          ),
-      ]);
+      if (deliveredNow) {
+        await db.batch([
+          db
+            .prepare(
+              `UPDATE trip_jobs SET status='delivered',delivered_at=?,last_seen_at=?,last_odometer_km=? WHERE id=?`,
+            )
+            .bind(recorded, recorded, p.odometerKm ?? null, job.id),
+          db
+            .prepare(
+              `UPDATE trips SET status='pending_driver',completed_at=?,distance_km=?,income=?,damage=MAX(damage,?) WHERE id=?`,
+            )
+            .bind(
+              recorded,
+              distance,
+              (p.gameIncomeCents ?? 0) / 100,
+              Math.max(p.truckDamage ?? 0, p.trailerDamage ?? 0) * 100,
+              tripId,
+            ),
+          db
+            .prepare(
+              `INSERT OR IGNORE INTO trip_reviews (id,trip_id,status) VALUES (?,?,'pending_driver')`,
+            )
+            .bind(randomId(), tripId),
+          db
+            .prepare(
+              `UPDATE dispatch_orders SET status='completed',updated_at=CURRENT_TIMESTAMP WHERE trip_id=? AND status='started'`,
+            )
+            .bind(tripId),
+          db
+            .prepare(
+              `INSERT INTO dispatch_history (id,order_id,actor_id,action,detail) SELECT ?,id,?,'completed',? FROM dispatch_orders WHERE trip_id=?`,
+            )
+            .bind(
+              randomId(),
+              p.userId,
+              JSON.stringify({ tripId, distance }),
+              tripId,
+            ),
+        ]);
+      }
+      // Delivery submission is server-side and idempotent. If payroll creation is
+      // temporarily unavailable, the pending state remains recoverable and the
+      // desktop client performs one authenticated fallback attempt.
+      try {
+        const submitted = await submitDeliveredTrip(tripId);
+        lifecycle = submitted.status;
+      } catch {
+        lifecycle = "pending_driver";
+      }
     } else if (event === "game.exited" || event === "client.disconnected") {
       lifecycle = "interrupted";
       await db.batch([
@@ -587,7 +599,7 @@ export async function POST(request: Request) {
   ]);
   if (deliveredNow) await notifyDiscordDelivery(tripId, p.vtcId);
   const points =
-    job && !["cancelled", "pending_driver"].includes(lifecycle)
+    job && !["cancelled", "pending_driver", "confirmed", "approved"].includes(lifecycle)
       ? await scoreSpeed(p, tripId, recorded)
       : { active: false, added: 0, total: 0 };
   await audit(

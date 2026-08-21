@@ -1,5 +1,5 @@
 import {apiError,audit,ensureDatabase,getSessionUser,platformEnv,randomId,sha256} from "@/lib/platform";
-import {createOrUpdateTripPayroll} from "@/lib/payroll";
+import {submitDeliveredTrip} from "@/lib/payroll";
 import {personalClientKeyName} from "@/lib/client-access";
 
 type Body={action?:"confirmTrip"|"redeemPoints";tripId?:string;points?:number};
@@ -21,15 +21,9 @@ export async function POST(request:Request){await ensureDatabase();const user=aw
   if(body.action==="confirmTrip"&&body.tripId){
     const trip=await db.prepare(`SELECT id,vtc_id AS vtcId,user_id AS userId,status FROM trips WHERE id=? AND user_id=?`).bind(body.tripId,user.id).first<TripRow>();
     if(!trip)return apiError("Fahrt nicht gefunden",404);
-    if(trip.status!=="pending_driver")return apiError("Diese Fahrt wartet nicht auf deine Bestätigung",409);
+    if(!["pending_driver","confirmed","approved"].includes(trip.status))return apiError("Diese Fahrt ist noch nicht zur Abrechnung bereit",409);
     try{
-      const result=await createOrUpdateTripPayroll(trip.id,user.id);
-      await db.batch([
-        db.prepare(`UPDATE trip_reviews SET status='driver_confirmed',driver_confirmed_at=CURRENT_TIMESTAMP WHERE trip_id=?`).bind(trip.id),
-        db.prepare(`UPDATE trips SET status='confirmed' WHERE id=?`).bind(trip.id),
-        db.prepare(`UPDATE point_ledger SET status='active' WHERE trip_id=? AND status='provisional'`).bind(trip.id),
-        db.prepare(`UPDATE speed_incidents SET status='active' WHERE trip_id=? AND status='provisional'`).bind(trip.id),
-      ]);
+      const result=await submitDeliveredTrip(trip.id);
       await audit("trip.driver_confirmed","trip",trip.id,user.id,{payrollId:result.payrollId,netCents:result.netCents,reservationStatus:result.reservation?.status},trip.vtcId);
       return Response.json({confirmed:true,...result});
     }catch(error){return apiError(error instanceof Error?error.message:"Abrechnung konnte nicht erstellt werden",409)}

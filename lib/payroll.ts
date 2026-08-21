@@ -219,22 +219,76 @@ export async function createOrUpdateTripPayroll(
     .bind(tripId)
     .first<TripRow>();
   if (!trip) throw new Error("Fahrt nicht gefunden");
-  const period = String(trip.completedAt || new Date().toISOString()).slice(0, 7);
+  const periodBase = String(trip.completedAt || new Date().toISOString()).slice(0, 7);
+  type PayrollTarget = {
+    id: string;
+    status: string;
+    period: string;
+    netCents?: number;
+  };
+  // Repeated delivery packets and repeated review actions must always resolve to
+  // the payroll line that already belongs to this trip.
   let payroll = await db
-    .prepare(`SELECT id,status FROM payrolls WHERE vtc_id=? AND user_id=? AND period=?`)
-    .bind(trip.vtcId, trip.userId, period)
-    .first<{ id: string; status: string }>();
-  if (payroll?.status === "paid")
-    throw new Error("Die Monatsabrechnung dieser Fahrt wurde bereits ausgezahlt");
+    .prepare(
+      `SELECT p.id,p.status,p.period,p.net_cents AS netCents
+       FROM payroll_lines l JOIN payrolls p ON p.id=l.payroll_id
+       WHERE l.trip_id=? AND l.type='trip_gross'
+       ORDER BY p.created_at DESC LIMIT 1`,
+    )
+    .bind(trip.id)
+    .first<PayrollTarget>();
+  if (payroll?.status === "paid") {
+    const accountId = options.accountId || (await ensureFinanceAccount(trip.vtcId));
+    if (options.bookIncome) {
+      await postTripIncome(trip, actorId, accountId);
+      await db.batch([
+        db
+          .prepare(`UPDATE point_ledger SET status='active' WHERE trip_id=? AND status IN ('provisional','rejected')`)
+          .bind(trip.id),
+        db
+          .prepare(`UPDATE speed_incidents SET status='active' WHERE trip_id=? AND status IN ('provisional','rejected')`)
+          .bind(trip.id),
+      ]);
+    }
+    return {
+      payrollId: payroll.id,
+      netCents: payroll.netCents ?? 0,
+      reservation: null,
+      alreadyPaid: true,
+    };
+  }
   if (!payroll) {
-    payroll = { id: randomId(), status: "draft" };
+    payroll = await db
+      .prepare(
+        `SELECT id,status,period,net_cents AS netCents FROM payrolls
+         WHERE vtc_id=? AND user_id=? AND status<>'paid'
+           AND (period=? OR period LIKE ?)
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .bind(trip.vtcId, trip.userId, periodBase, `${periodBase} · Nachtrag %`)
+      .first<PayrollTarget>();
+  }
+  if (!payroll) {
+    const prior = await db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM payrolls
+         WHERE vtc_id=? AND user_id=? AND (period=? OR period LIKE ?)`,
+      )
+      .bind(trip.vtcId, trip.userId, periodBase, `${periodBase} · Nachtrag %`)
+      .first<{ count: number }>();
+    const priorCount = Number(prior?.count ?? 0);
+    const period = priorCount > 0
+      ? `${periodBase} · Nachtrag ${priorCount}`
+      : periodBase;
+    payroll = { id: randomId(), status: "draft", period };
     await db
       .prepare(
         `INSERT INTO payrolls (id,vtc_id,user_id,period,status) VALUES (?,?,?,?,'draft')`,
       )
-      .bind(payroll.id, trip.vtcId, trip.userId, period)
+      .bind(payroll.id, trip.vtcId, trip.userId, payroll.period)
       .run();
   }
+  const isSupplemental = payroll.period !== periodBase;
   const rates = await payrollRates(trip.vtcId, trip.userId);
   const start = Date.parse(trip.startedAt),
     end = Date.parse(trip.completedAt ?? ""),
@@ -286,7 +340,9 @@ export async function createOrUpdateTripPayroll(
         JSON.stringify({ damagePercent: trip.damage, centsPerPercent: rates.damagePenalty }),
       ),
   ]);
-  if (rates.baseSalaryCents > 0) {
+  // A supplemental payroll contains only trips delivered after the regular
+  // monthly payroll was paid. The monthly base salary must never be duplicated.
+  if (rates.baseSalaryCents > 0 && !isSupplemental) {
     const baseLine = await db
       .prepare(
         `SELECT id FROM payroll_lines WHERE payroll_id=? AND trip_id IS NULL AND type='base_salary' LIMIT 1`,
@@ -332,6 +388,42 @@ export async function createOrUpdateTripPayroll(
   const totals = await recalculatePayroll(payroll.id);
   const reservation = await refreshPayrollReservation(payroll.id, accountId);
   return { payrollId: payroll.id, netCents: totals?.netCents ?? 0, reservation };
+}
+
+export async function submitDeliveredTrip(tripId: string) {
+  const db = platformEnv().DB;
+  const trip = await db
+    .prepare(
+      `SELECT id,vtc_id AS vtcId,user_id AS userId,status FROM trips WHERE id=?`,
+    )
+    .bind(tripId)
+    .first<{ id: string; vtcId: string; userId: string; status: string }>();
+  if (!trip) throw new Error("Fahrt nicht gefunden");
+  if (["cancelled", "rejected", "started", "interrupted", "paused"].includes(trip.status))
+    throw new Error("Diese Fahrt ist noch nicht zur Abrechnung bereit");
+
+  const result = await createOrUpdateTripPayroll(trip.id, trip.userId);
+  if (trip.status === "pending_driver") {
+    await db.batch([
+      db
+        .prepare(
+          `INSERT INTO trip_reviews (id,trip_id,status,driver_confirmed_at)
+           VALUES (?,?,'driver_confirmed',CURRENT_TIMESTAMP)
+           ON CONFLICT(trip_id) DO UPDATE SET status='driver_confirmed',driver_confirmed_at=CURRENT_TIMESTAMP`,
+        )
+        .bind(randomId(), trip.id),
+      db.prepare(`UPDATE trips SET status='confirmed' WHERE id=? AND status='pending_driver'`).bind(trip.id),
+      db.prepare(`UPDATE point_ledger SET status='active' WHERE trip_id=? AND status='provisional'`).bind(trip.id),
+      db.prepare(`UPDATE speed_incidents SET status='active' WHERE trip_id=? AND status='provisional'`).bind(trip.id),
+    ]);
+  }
+  return {
+    ...result,
+    tripId: trip.id,
+    vtcId: trip.vtcId,
+    userId: trip.userId,
+    status: trip.status === "pending_driver" ? "confirmed" : trip.status,
+  };
 }
 
 export async function removeTripAccounting(tripId: string, actorId: string) {
@@ -418,8 +510,10 @@ export async function reconcileApprovedTrips(vtcId: string, actorId: string) {
        LEFT JOIN payrolls p ON p.id=l.payroll_id
        LEFT JOIN payroll_reservations r ON r.payroll_id=p.id
        LEFT JOIN finance_entries e ON e.reference_type='trip_income' AND e.reference_id=t.id AND e.status='posted'
-       WHERE t.vtc_id=? AND t.status='approved' AND p.status IS NOT 'paid'
-         AND (l.id IS NULL OR r.payroll_id IS NULL OR r.status='unfunded' OR (t.income>0 AND e.id IS NULL))
+       WHERE t.vtc_id=? AND t.status='approved'
+         AND (l.id IS NULL
+           OR (COALESCE(p.status,'')<>'paid' AND (r.payroll_id IS NULL OR r.status='unfunded'))
+           OR (t.income>0 AND e.id IS NULL))
        ORDER BY t.completed_at`,
     )
     .bind(vtcId)
@@ -430,4 +524,27 @@ export async function reconcileApprovedTrips(vtcId: string, actorId: string) {
     processed++;
   }
   return processed;
+}
+
+export async function reconcilePendingDriverTrips(vtcId: string) {
+  const db = platformEnv().DB;
+  const rows = await db
+    .prepare(
+      `SELECT id FROM trips
+       WHERE vtc_id=? AND status='pending_driver'
+       ORDER BY completed_at,started_at`,
+    )
+    .bind(vtcId)
+    .all<{ id: string }>();
+  let processed = 0;
+  const errors: string[] = [];
+  for (const row of rows.results) {
+    try {
+      await submitDeliveredTrip(row.id);
+      processed++;
+    } catch (error) {
+      errors.push(`${row.id}: ${error instanceof Error ? error.message : "Unbekannter Fehler"}`);
+    }
+  }
+  return { processed, errors };
 }

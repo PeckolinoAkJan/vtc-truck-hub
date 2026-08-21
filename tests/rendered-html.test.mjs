@@ -192,3 +192,25 @@ test("live map uses projected SCS telemetry without invented drivers", async () 
   assert.match(payroll, /personalClientKeyName/);
   assert.match(payroll, /authenticatedUser\(request\)/);
 });
+
+test("delivered trips reach payroll automatically and paid months use supplements", async () => {
+  const [payrollLogic, telemetry, trips, finance, client, payrollPage] = await Promise.all([
+    readFile(new URL("../lib/payroll.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/telemetry/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/trips/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/finance/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../desktop-client/ConvoyHub.Client/MainWindow.xaml.cs", import.meta.url), "utf8"),
+    readFile(new URL("../app/abrechnung/page.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(payrollLogic, /export async function submitDeliveredTrip/);
+  assert.match(payrollLogic, /Nachtrag/);
+  assert.match(payrollLogic, /!isSupplemental/);
+  assert.match(payrollLogic, /reconcilePendingDriverTrips/);
+  assert.match(telemetry, /await submitDeliveredTrip\(tripId\)/);
+  assert.match(trips, /trip!\.status === "pending_driver"/);
+  assert.match(finance, /await reconcilePendingDriverTrips\(vtcId\)/);
+  assert.match(client, /await ConfirmInvoiceAsync\(\)/);
+  assert.doesNotMatch(client, /Möchtest du die Abrechnung jetzt bestätigen/);
+  assert.match(client, /Automatisch übermittelt/);
+  assert.match(payrollPage, /Übermittlung erneut versuchen/);
+});
