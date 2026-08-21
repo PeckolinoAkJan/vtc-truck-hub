@@ -35,10 +35,24 @@ test("server-renders the VTC Truck Hub landing page", async () => {
 
   const html = await response.text();
   assert.match(html, /VTC TRUCK/);
-  assert.match(html, /Zwei Welten\./);
+  assert.match(html, /Gemeinsam fahren\./);
   assert.match(html, /EURO TRUCK SIMULATOR 2/);
   assert.match(html, /AMERICAN TRUCK SIMULATOR/);
   assert.match(html, /Speditionen entdecken/i);
+  assert.match(html, /News &amp; Ankündigungen/i);
+  assert.match(html, /Wikipedia/i);
+  assert.doesNotMatch(html, /href="\/dashboard"/i);
+});
+
+test("public navigation and knowledge routes render without login", async () => {
+  const [companies, ranking, wiki, live] = await Promise.all([
+    render("/speditionen"), render("/rangliste"), render("/wiki"), render("/live-map"),
+  ]);
+  for (const response of [companies, ranking, wiki, live]) assert.equal(response.status, 200);
+  assert.match(await ranking.text(), /Rangliste/);
+  const wikiHtml = await wiki.text();
+  assert.match(wikiHtml, /Wikipedia/);
+  assert.match(wikiHtml, /Startseite/);
 });
 
 test("admin route is present and founder-gated", async () => {

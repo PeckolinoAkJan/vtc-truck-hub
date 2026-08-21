@@ -53,6 +53,8 @@ const statements=[
 `CREATE TABLE IF NOT EXISTS leave_requests (id TEXT PRIMARY KEY,vtc_id TEXT NOT NULL,user_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'vacation',starts_at TEXT NOT NULL,ends_at TEXT NOT NULL,reason TEXT,representative_id TEXT,status TEXT NOT NULL DEFAULT 'requested',reviewed_by TEXT,reviewed_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,`CREATE INDEX IF NOT EXISTS idx_leave_vtc_status ON leave_requests(vtc_id,status)`,
 `CREATE TABLE IF NOT EXISTS driver_availability (id TEXT PRIMARY KEY,vtc_id TEXT NOT NULL,user_id TEXT NOT NULL,weekday INTEGER NOT NULL,available_from TEXT,available_to TEXT,note TEXT)`,`CREATE UNIQUE INDEX IF NOT EXISTS idx_driver_availability_day ON driver_availability(vtc_id,user_id,weekday)`,
 `CREATE TABLE IF NOT EXISTS news_posts (id TEXT PRIMARY KEY,vtc_id TEXT NOT NULL,author_id TEXT NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL,category TEXT NOT NULL DEFAULT 'Allgemein',visibility TEXT NOT NULL DEFAULT 'public',status TEXT NOT NULL DEFAULT 'draft',pinned INTEGER NOT NULL DEFAULT 0,cover_upload_id TEXT,publish_at TEXT,published_at TEXT,archived_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,`CREATE INDEX IF NOT EXISTS idx_news_vtc_publish ON news_posts(vtc_id,status,publish_at)`,
+`CREATE TABLE IF NOT EXISTS platform_news (id TEXT PRIMARY KEY,slug TEXT NOT NULL UNIQUE,title TEXT NOT NULL,teaser TEXT NOT NULL DEFAULT '',body TEXT NOT NULL,category TEXT NOT NULL DEFAULT 'Plattform',cover_url TEXT,status TEXT NOT NULL DEFAULT 'draft',pinned INTEGER NOT NULL DEFAULT 0,publish_at TEXT,published_at TEXT,author_id TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,`CREATE INDEX IF NOT EXISTS idx_platform_news_public ON platform_news(status,pinned,publish_at,published_at)`,
+`CREATE TABLE IF NOT EXISTS platform_wiki_tabs (id TEXT PRIMARY KEY,slug TEXT NOT NULL UNIQUE,title TEXT NOT NULL,summary TEXT NOT NULL DEFAULT '',body TEXT NOT NULL DEFAULT '',position INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'draft',author_id TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,`CREATE INDEX IF NOT EXISTS idx_platform_wiki_public ON platform_wiki_tabs(status,position,title)`,
 `CREATE TABLE IF NOT EXISTS board_posts (id TEXT PRIMARY KEY,vtc_id TEXT,author_id TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'post',title TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'published',pinned INTEGER NOT NULL DEFAULT 0,expires_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,`CREATE INDEX IF NOT EXISTS idx_board_vtc_status ON board_posts(vtc_id,status,created_at)`,
 `CREATE TABLE IF NOT EXISTS content_comments (id TEXT PRIMARY KEY,entity_type TEXT NOT NULL,entity_id TEXT NOT NULL,author_id TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'published',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,`CREATE INDEX IF NOT EXISTS idx_comments_entity ON content_comments(entity_type,entity_id,created_at)`,
 `CREATE TABLE IF NOT EXISTS content_reactions (id TEXT PRIMARY KEY,entity_type TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,reaction TEXT NOT NULL DEFAULT 'like',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,`CREATE UNIQUE INDEX IF NOT EXISTS idx_reaction_user ON content_reactions(entity_type,entity_id,user_id,reaction)`,
@@ -135,8 +137,68 @@ const statements=[
 `INSERT OR IGNORE INTO vtcs (id,slug,name,tag,description,country,city,games,languages,timezone,verified,driver_count,total_km,created_at) VALUES ('3c903a43-0208-4ac1-a332-a4ff568379f8','blackline-logistik-vgmbh','Blackline Logistik vGmbH','BLAC','','Deutschland',NULL,'ETS2,ATS','Deutsch','Europe/Berlin',0,1,0,'2026-08-03T10:29:50.601999Z')`,
 `INSERT OR IGNORE INTO vtcs (id,slug,name,tag,description,country,city,games,languages,timezone,verified,driver_count,total_km,created_at) VALUES ('ad54f6c2-a02d-4ee4-a0fb-e1312743c1cd','gala-express','Gala Express','GALA','Wir fahren deine Lieferung sicher ans Ziel','Deutschland',NULL,'ETS2,ATS','Deutsch','Europe/Berlin',0,1,0,'2026-08-06T06:58:35.143384Z')`,
 `INSERT OR IGNORE INTO vtcs (id,slug,name,tag,description,country,city,games,languages,timezone,verified,driver_count,total_km,created_at) VALUES ('b4ed76a5-e06b-4780-99a0-120045fa77ed','stl','STL','STL','','Deutschland',NULL,'ETS2,ATS','Deutsch','Europe/Berlin',0,1,537.89,'2026-08-20T09:14:32.178993Z')`];
+const initialWikiTabs=[
+  {id:"platform-wiki-website",slug:"webseite",title:"Webseite",summary:"Die vollständige Anleitung zur VTC Truck Hub Plattform.",position:10,body:`## Willkommen beim VTC Truck Hub
+VTC Truck Hub ist die zentrale Plattform für virtuelle Speditionen in Euro Truck Simulator 2 und American Truck Simulator. Sie verbindet öffentliche Speditionsprofile, Fahrer- und Bewerbungsverwaltung, Disposition, Telemetrie, Fahrtenbuch, Fuhrpark, Lohnbüro, Events und Statistiken.
+
+## Registrierung und Anmeldung
+Ein Benutzerkonto ist unabhängig von der Mitgliedschaft in einer Spedition. Die Anmeldung ist mit E-Mail und Passwort sowie über Google, Steam oder Discord möglich. Unter Mein Konto können persönliche Daten, Profilbild, Sprache, Zeitzone, verbundene Konten und Sicherheitseinstellungen verwaltet werden.
+
+## Spedition finden, gründen oder beitreten
+Im öffentlichen Speditionsverzeichnis lassen sich Unternehmen nach Spiel, Sprache, Land, Bewerbungsstatus und Fahrweise suchen. Jede Spedition besitzt ein eigenes Profil mit Logo, Titelbild, Beschreibung, Regeln, Fahrerliste, Events, Galerie und Kontaktmöglichkeiten. Eine neue Spedition wird über die Plattform gegründet; der Gründer erhält automatisch die geschützte Geschäftsführerrolle.
+
+## Speditions-Dashboard
+Nach der Anmeldung zeigt das Dashboard ausschließlich echte Daten der zugeordneten Spedition. Die Bereiche Fahrer, Bewerbungen, Disposition, Fahrtenbuch, Fuhrpark, Lohnbüro, Events und Statistik sind über die obere Navigation erreichbar. Sichtbare Funktionen richten sich nach den Rollen und Berechtigungen des Mitglieds.
+
+## Fahrer und Bewerbungen
+Die Personalverwaltung enthält Stammdaten, Rang, Abteilung, Probezeit, Status und Personalverlauf. Bewerbungen durchlaufen den festgelegten Prozess von der Eingangsprüfung über Rückfragen und Probefahrt bis zur Annahme oder Ablehnung. Sensible Personalnotizen sind nur ausdrücklich berechtigten Rollen zugänglich.
+
+## Aufträge, Fahrtenbuch und Prüfung
+Die Disposition erstellt oder verteilt Aufträge. Der Desktop-Client erkennt angenommene, laufende, unterbrochene, fortgesetzte, gelieferte und abgebrochene Aufträge. Gelieferte Fahrten werden automatisch an das Fahrtenbuch übertragen. Berechtigte Mitarbeiter prüfen Strecke, Fracht, Schaden und Einnahmen und geben die Fahrt anschließend für die Abrechnung frei.
+
+## Fuhrpark und Wartung
+LKW und Auflieger werden mit ihren im Spiel erkannten Kennungen gekoppelt. Fahrzeuge in Wartung, mit Defekt oder außer Betrieb dürfen nicht für abrechnungsfähige Aufträge verwendet werden. Die Fuhrparkleitung verwaltet Kopplung, Zuweisung, Reservierung, Wartung und Vorfälle.
+
+## Lohnbüro und virtuelle Wirtschaft
+Nach der Fahrtenfreigabe wird der errechnete Betrag im Lohnbüro der jeweiligen Spedition gesperrt. Erst die dortige Abrechnungsfreigabe zahlt den virtuellen Lohn aus. Plattform- und Speditionskonten bleiben strikt getrennt; es handelt sich ausschließlich um eine virtuelle Spielwirtschaft.
+
+## Live-Map, Events und Statistik
+Die Live-Map zeigt freigegebene und datenschutzgerecht verzögerte Positionen. Events und Convoys können geplant, veröffentlicht und verwaltet werden. Statistiken und Ranglisten werden aus echten Fahrten-, Mitglieder- und Speditionsdaten berechnet.
+
+## API-Schlüssel, Datenschutz und Hilfe
+Jeder Benutzer erhält einen persönlichen Clientschlüssel. Nach dem Beitritt wird er automatisch mit der Spedition verbunden. Schlüssel dürfen niemals öffentlich geteilt werden. Hilfe gibt es über das Support- und Ticketsystem. Kontoexport, Löschung, Sitzungen und Einwilligungen befinden sich in den Kontoeinstellungen.`},
+  {id:"platform-wiki-client",slug:"client",title:"Client",summary:"Installation, Anmeldung, Telemetrie und Fehlerbehebung des Desktop-Clients.",position:20,body:`## Voraussetzungen und Installation
+Der VTC Truck Hub Desktop-Client ist für Windows 10 und Windows 11 vorgesehen. Lade ausschließlich die aktuelle Installations-EXE über den angemeldeten Bereich der Webseite herunter. Der integrierte Updater prüft beim Start auf neue oder verpflichtende Versionen.
+
+## Anmeldung vor dem Programmstart
+Vor dem eigentlichen Client erscheint das Anmeldefenster. Unterstützt werden E-Mail und Passwort, Google, Steam und Discord. Nach erfolgreicher Anmeldung lädt der Client Benutzerkonto, Speditionsmitgliedschaft, Rolle und persönlichen Telemetrieschlüssel automatisch. Der Schlüssel muss nicht von Hand eingetragen werden.
+
+## Spiel- und Plugin-Erkennung
+Der Client erkennt Euro Truck Simulator 2 und American Truck Simulator sowie das laufende Spiel. Er prüft das SCS-Telemetrieplugin und kann eine fehlende oder beschädigte Installation reparieren. ETS2, ATS und TruckersMP können anschließend aus dem Client gestartet werden.
+
+## Automatischer Auftragsablauf
+Ein im Spiel angenommener Auftrag wird als aktive Fahrt erkannt. Während der Fahrt werden Route, Position, Geschwindigkeit, Fahrzeug, Auflieger, Fracht, Kraftstoff, Schaden und weitere verfügbare Telemetriedaten übertragen. Beim Beenden des Spiels wird eine noch laufende Fahrt unterbrochen statt dupliziert. Wird derselbe Auftrag später erneut erkannt, setzt der Client die vorhandene Fahrt fort.
+
+## Lieferung, Abbruch und Abrechnung
+Bei erfolgreicher Lieferung schließt der Client die Fahrt automatisch ab und sendet sie ohne zusätzlichen Bestätigungsklick zur Fahrer- beziehungsweise Personalprüfung. Ein im Spiel abgebrochener Auftrag wird als abgebrochen gespeichert und nicht ausgezahlt. Nach der Freigabe gelangt eine gültige Fahrt in das Lohnbüro der zugehörigen Spedition.
+
+## Live-GPS und Datenschutz
+Während einer aktiven Fahrt übermittelt der Client die vom Spiel gelieferten Koordinaten an die Live-Map. Die öffentliche Ansicht wird verzögert und gerundet. Interne exakte Positionen richten sich nach der Mitgliedschaft und den persönlichen Datenschutzeinstellungen.
+
+## Fuhrparkprüfung und Warnungen
+Der Client meldet die eindeutigen Spielkennungen von LKW und Auflieger. Gekoppelte Fahrzeuge werden automatisch zugeordnet. Ist ein Fahrzeug gesperrt, defekt oder in Wartung, blockiert das System die Abrechnung und gibt eine sichtbare, akustische und auf Wunsch gesprochene Warnung aus: Bitte verwenden Sie ein anderes Fahrzeug oder einen anderen Auflieger.
+
+## Geschwindigkeit und Punkte
+Ab 95 km/h erfasst das System regelabhängige Geschwindigkeitspunkte. Die aktuelle Staffel wird von der Plattform geladen. Warnungen erscheinen im Client; die Spedition und der Plattformgründer können die Punkte im vorgesehenen Wirtschafts- und Berechtigungsrahmen verwalten.
+
+## Offline-Modus und Wiederherstellung
+Bei einem Verbindungsabbruch speichert der Client Telemetrie lokal in einer Warteschlange. Nach Wiederherstellung der Verbindung werden noch nicht bestätigte Datensätze in der richtigen Reihenfolge synchronisiert. Sitzungs- und Auftragskennungen verhindern doppelte Fahrten. Nach einem Absturz wird die letzte aktive Fahrt wiederhergestellt.
+
+## Diagnose und Fehlerbehebung
+Im Diagnosebereich sind Serververbindung, Pluginstatus, Spielstatus, Clientversion und Synchronisierungswarteschlange sichtbar. Bei Problemen zuerst Verbindung und Plugin prüfen, danach den Client neu starten. Protokolle enthalten keine veröffentlichten API-Schlüssel und können über den Fehlerbericht an den Support übermittelt werden.`},
+];
 let ready:Promise<void>|null=null;
-export function ensureDatabase(){ready??=(async()=>{const db=platformEnv().DB;if(!db)throw new Error("D1 binding DB fehlt");for(const sql of statements)await db.prepare(sql).run();await db.prepare(`INSERT OR IGNORE INTO economy_settings (id,vtc_id,name) VALUES ('economy-global',NULL,'Plattformstandard')`).run();const founder=platformEnv().FOUNDER_EMAIL?.trim().toLowerCase();if(founder)await db.prepare(`INSERT INTO platform_settings (key,value) VALUES ('founder_email',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(founder).run();await db.prepare("PRAGMA optimize").run()})();return ready}
+export function ensureDatabase(){ready??=(async()=>{const db=platformEnv().DB;if(!db)throw new Error("D1 binding DB fehlt");for(const sql of statements)await db.prepare(sql).run();await db.prepare(`INSERT OR IGNORE INTO economy_settings (id,vtc_id,name) VALUES ('economy-global',NULL,'Plattformstandard')`).run();for(const tab of initialWikiTabs)await db.prepare(`INSERT OR IGNORE INTO platform_wiki_tabs (id,slug,title,summary,body,position,status) VALUES (?,?,?,?,?,?,'published')`).bind(tab.id,tab.slug,tab.title,tab.summary,tab.body,tab.position).run();const founder=platformEnv().FOUNDER_EMAIL?.trim().toLowerCase();if(founder)await db.prepare(`INSERT INTO platform_settings (key,value) VALUES ('founder_email',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(founder).run();await db.prepare("PRAGMA optimize").run()})();return ready}
 const standardRoles:[string,string,number,string[]][]=[
   ["owner","Geschäftsführer",100,["*"]],["deputy","Stellvertretender Geschäftsführer",95,["view_management","manage_drivers","manage_applications","review_trips","manage_dispatch","manage_fleet","manage_payroll","manage_events","manage_gallery","publish_news","manage_partnerships","manage_discord","manage_roles","manage_settings","view_audit","view_sensitive_personnel"]],
   ["admin","Administrator",90,["view_management","manage_drivers","manage_applications","review_trips","manage_dispatch","manage_fleet","manage_events","manage_gallery","publish_news","manage_discord","manage_settings","view_audit"]],

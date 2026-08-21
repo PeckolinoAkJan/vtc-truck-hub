@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import PublicNav from "../components/PublicNav";
 type Data = {
   vtc: any;
   drivers: any[];
@@ -68,27 +69,7 @@ export default function DynamicVtcProfile({ slug }: { slug: string }) {
         } as React.CSSProperties
       }
     >
-      <header className="nav compact">
-        <a className="brand" href="/">
-          <span className="brand-mark">CH</span>
-          <span>
-            CONVOY<span>HUB</span>
-          </span>
-        </a>
-        <nav>
-          <a href="/">Speditionen</a>
-          <a href="/live-map">Live-Map</a>
-          <a href="/statistik">Statistik</a>
-        </nav>
-        <div className="nav-actions">
-          <a className="login" href="/konto">
-            Anmelden
-          </a>
-          <a className="primary" href="/dashboard">
-            Dashboard
-          </a>
-        </div>
-      </header>
+      <PublicNav active="companies" />
       <section
         className="profile-cover"
         style={{

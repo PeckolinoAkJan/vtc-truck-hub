@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import PublicNav from "../components/PublicNav";
 
 type Driver = {
   userId: string;
@@ -39,8 +39,6 @@ type LiveResponse = {
     pollIntervalMs?: number;
   };
 };
-type Account = { isFounder?: boolean };
-
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(maximum, Math.max(minimum, value));
 
@@ -82,7 +80,6 @@ export default function LiveMap() {
   const [vtc, setVtc] = useState("Alle");
   const [search, setSearch] = useState("");
   const [following, setFollowing] = useState(false);
-  const [account, setAccount] = useState<Account | false | null>(null);
   const [meta, setMeta] = useState<LiveResponse["meta"]>();
   const [error, setError] = useState("");
 
@@ -120,13 +117,6 @@ export default function LiveMap() {
     };
   }, []);
 
-  useEffect(() => {
-    fetch("/api/auth/me", { cache: "no-store" })
-      .then(async (response) => response.ok ? response.json() : false)
-      .then(setAccount)
-      .catch(() => setAccount(false));
-  }, []);
-
   const vtcOptions = useMemo(
     () => [...new Map(drivers.filter((driver) => driver.vtcId).map((driver) => [driver.vtcId, driver.vtcName ?? driver.vtcId])).entries()],
     [drivers],
@@ -157,26 +147,7 @@ export default function LiveMap() {
 
   return (
     <main className="map-page">
-      <header className="nav compact">
-        <Link className="brand" href="/">
-          <span className="brand-mark">VH</span>
-          <span>VTC TRUCK <span>HUB</span></span>
-        </Link>
-        <nav>
-          <Link href="/">Speditionen</Link>
-          <a className="active" href="/live-map">Live-Map</a>
-        </nav>
-        <div className="nav-actions">
-          {account ? <>
-            {account.isFounder && <a className="login" href="/admin">Administration</a>}
-            <a className="login" href="/dashboard">Dashboard</a>
-            <a className="login" href="/konto">Mein Konto</a>
-          </> : account === false ? <>
-            <a className="login" href="/konto">Anmelden</a>
-            <a className="primary" href="/konto">Registrieren</a>
-          </> : <span className="login">Konto wird geprüft …</span>}
-        </div>
-      </header>
+      <PublicNav active="live" />
 
       <section className="map-toolbar">
         <div>

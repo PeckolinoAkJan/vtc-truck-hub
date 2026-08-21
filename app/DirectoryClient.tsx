@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import PublicNav from "./components/PublicNav";
 type Vtc = {
   id: string;
   slug: string;
@@ -28,9 +29,6 @@ type Vtc = {
 };
 export default function DirectoryClient() {
   const [rows, setRows] = useState<Vtc[]>([]),
-    [authenticated, setAuthenticated] = useState(false),
-    [isFounder, setIsFounder] = useState(false),
-    [clientRelease, setClientRelease] = useState<{version:string;downloadUrl:string}|null>(null),
     [query, setQuery] = useState(""),
     [game, setGame] = useState(""),
     [language, setLanguage] = useState(""),
@@ -60,14 +58,7 @@ export default function DirectoryClient() {
           return r.ok;
         })
       : Promise.resolve(false);
-    Promise.all([
-      finishOAuth.then(() => fetch("/api/auth/me").then(async (r) => r.ok ? { signedIn: true, ...(await r.json()) } : { signedIn: false, isFounder: false })),
-      fetch("/api/v1/client-download").then((r) => r.ok ? r.json() : null),
-    ]).then(([account, download]) => {
-      setAuthenticated(account.signedIn);
-      setIsFounder(Boolean(account.isFounder));
-      setClientRelease(download?.release ?? null);
-    }).catch(() => {});
+    finishOAuth.catch(() => undefined);
   }, []);
   useEffect(() => {
     const p = new URLSearchParams();
@@ -127,40 +118,7 @@ export default function DirectoryClient() {
   }
   return (
     <main>
-      <header className="nav">
-        <a className="brand" href="#top">
-          <span className="brand-mark">VH</span>
-          <span>
-            VTC TRUCK <span>HUB</span>
-          </span>
-        </a>
-        <nav>
-          <a className="active" href="#directory">
-            Speditionen
-          </a>
-          <a href="/live-map">Live-Map</a>
-          <a href="/statistik">Ranglisten</a>
-        </nav>
-        <div className="nav-actions">
-          {authenticated && clientRelease?.downloadUrl && (
-            <a
-              className="client-download"
-              href={clientRelease.downloadUrl}
-              title={`VTC Truck Hub Client ${clientRelease.version}`}
-            >
-              Client downloaden
-            </a>
-          )}
-          {isFounder && <a className="login" href="/admin">Administration</a>}
-          {authenticated && <a className="login" href="/dashboard">Dashboard</a>}
-          <a className="login" href="/konto">
-            {authenticated ? "Mein Konto" : "Anmelden"}
-          </a>
-          <a className="primary" href="#create">
-            Spedition gründen
-          </a>
-        </div>
-      </header>
+      <PublicNav active="companies" />
       <section className="hero" id="top">
         <div className="road-lines" />
         <div className="game-ribbon" aria-label="Unterstützte Spiele">
