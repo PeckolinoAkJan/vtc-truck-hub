@@ -74,7 +74,8 @@ export async function GET(request: Request) {
         .prepare(
           `SELECT b.id,b.vehicle_id AS vehicleId,b.asset_type AS assetType,b.game,b.game_config_id AS gameConfigId,
                   b.display_name AS displayName,b.license_plate AS licensePlate,b.last_seen_at AS lastSeenAt,
-                  v.number AS vehicleNumber,v.status AS vehicleStatus,u.display_name AS detectedBy
+                  b.paired_user_id AS detectedUserId,v.number AS vehicleNumber,v.status AS vehicleStatus,
+                  u.display_name AS detectedBy
            FROM vehicle_game_bindings b
            LEFT JOIN vehicles v ON v.id=b.vehicle_id
            LEFT JOIN users u ON u.id=b.paired_user_id
@@ -211,6 +212,85 @@ export async function POST(request: Request) {
     await refreshBindingUsage(vtcId, b.bindingId, b.vehicleId);
     await audit("fleet.binding.paired", "vehicle", b.vehicleId, actor.id, { bindingId: b.bindingId }, vtcId);
     return Response.json({ saved: true });
+  }
+  if (b.action === "importBinding") {
+    if (!b.bindingId) return apiError("Erkennung fehlt");
+    const binding = await db.prepare(
+      `SELECT asset_type AS assetType,game,game_config_id AS gameConfigId,brand_id AS brandId,
+              display_name AS displayName,license_plate AS licensePlate,paired_user_id AS detectedUserId
+       FROM vehicle_game_bindings WHERE id=? AND vtc_id=? AND active=1`,
+    ).bind(b.bindingId, vtcId).first<{
+      assetType: string;
+      game: string;
+      gameConfigId: string | null;
+      brandId: string | null;
+      displayName: string | null;
+      licensePlate: string | null;
+      detectedUserId: string | null;
+    }>();
+    if (!binding) return apiError("Erkanntes Fahrzeug nicht gefunden", 404);
+    if (!["truck", "trailer"].includes(binding.assetType))
+      return apiError("Ungültiger Fahrzeugtyp");
+    const assignedUserId =
+      clean(d.assignedUserId, 100) || binding.detectedUserId || actor.id;
+    const assignedMember = await db.prepare(
+      `SELECT id FROM memberships
+       WHERE vtc_id=? AND user_id=? AND status IN ('active','probation')`,
+    ).bind(vtcId, assignedUserId).first();
+    if (!assignedMember) return apiError("Der ausgewählte Fahrer gehört nicht zur Spedition", 409);
+
+    const displayName = clean(binding.displayName || binding.gameConfigId || "", 160);
+    const nameParts = displayName.split(/\s+/).filter(Boolean);
+    const fallbackBrand = binding.assetType === "trailer" ? "SCS" : "Unbekannt";
+    const brand = clean(d.brand, 80) || nameParts.shift() || clean(binding.brandId, 80) || fallbackBrand;
+    const model = clean(d.model, 80) || nameParts.join(" ") || displayName || "Spiel-Fahrzeug";
+    const prefix = binding.assetType === "trailer" ? "AUF" : "LKW";
+    const existingCount = await db.prepare(
+      `SELECT COUNT(*) AS count FROM vehicles WHERE vtc_id=? AND type=?`,
+    ).bind(vtcId, binding.assetType).first<{ count: number }>();
+    let sequence = Number(existingCount?.count || 0) + 1;
+    let number = clean(d.number, 40) || `${prefix}-${String(sequence).padStart(3, "0")}`;
+    while (await db.prepare(`SELECT id FROM vehicles WHERE vtc_id=? AND number=?`).bind(vtcId, number).first()) {
+      sequence += 1;
+      number = `${prefix}-${String(sequence).padStart(3, "0")}`;
+    }
+    const vehicleId = randomId();
+    await db.batch([
+      db.prepare(
+        `INSERT INTO vehicles
+         (id,vtc_id,number,type,brand,model,license_plate,mileage,status,assigned_user_id)
+         VALUES (?,?,?,?,?,?,?,0,'available',?)`,
+      ).bind(
+        vehicleId,
+        vtcId,
+        number,
+        binding.assetType,
+        brand,
+        model,
+        clean(binding.licensePlate, 40) || null,
+        assignedUserId,
+      ),
+      db.prepare(
+        `INSERT OR IGNORE INTO vehicle_details
+         (vehicle_id,maintenance_interval_km,reliability,updated_at)
+         VALUES (?,30000,100,CURRENT_TIMESTAMP)`,
+      ).bind(vehicleId),
+      db.prepare(
+        `UPDATE vehicle_game_bindings
+         SET vehicle_id=?,paired_user_id=?,last_seen_at=CURRENT_TIMESTAMP
+         WHERE id=? AND vtc_id=?`,
+      ).bind(vehicleId, assignedUserId, b.bindingId, vtcId),
+    ]);
+    await refreshBindingUsage(vtcId, b.bindingId, vehicleId);
+    await audit(
+      "fleet.binding.imported",
+      "vehicle",
+      vehicleId,
+      actor.id,
+      { bindingId: b.bindingId, assignedUserId, number, game: binding.game },
+      vtcId,
+    );
+    return Response.json({ saved: true, vehicleId, number });
   }
   if (b.action === "unpairBinding") {
     if (!b.bindingId) return apiError("Erkennung fehlt");

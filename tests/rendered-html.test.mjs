@@ -235,6 +235,7 @@ test("fleet bindings block maintenance assets before trip approval and payroll",
   assert.match(compliance, /refreshBindingUsage/);
   assert.match(fleetApi, /startMaintenance/);
   assert.match(fleetApi, /fleet_maintenance/);
+  assert.match(fleetApi, /importBinding/);
   assert.match(telemetry, /fleet_blocked/);
   assert.match(telemetry, /updateFleetVehicleState/);
   assert.match(payroll, /tripFleetCompliance/);
@@ -244,5 +245,6 @@ test("fleet bindings block maintenance assets before trip approval and payroll",
   assert.match(plugin, /SCS_TELEMETRY_CONFIG_truck/);
   assert.match(plugin, /SCS_TELEMETRY_CONFIG_trailer/);
   assert.match(fleetPage, /Spielkopplung/);
+  assert.match(fleetPage, /Als neuen/);
   assert.match(fleetPage, /Warnton und Sprachansage im Client aktivieren/);
 });
