@@ -2,7 +2,7 @@ import { ensureDatabase, platformEnv } from "@/lib/platform";
 
 const CURRENT_RELEASE = {
   version: "1.4.0",
-  checksum: null as string | null,
+  checksum: "E20734D2978D5BF083B4B38B722B535D8761E97DD7535C7EA124559938B266B2" as string | null,
 };
 
 export async function GET() {
