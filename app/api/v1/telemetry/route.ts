@@ -1,4 +1,9 @@
 import { deliveryMessage, discordRequest } from "@/lib/discord";
+import {
+  evaluateFleetCompliance,
+  updateFleetVehicleState,
+  type FleetAssetPacket,
+} from "@/lib/fleet-compliance";
 import { submitDeliveredTrip } from "@/lib/payroll";
 import {
   apiError,
@@ -56,6 +61,8 @@ type Packet = {
   navigationSpeedLimitKph?: number;
   gameTime?: number;
   truck?: string;
+  truckAsset?: FleetAssetPacket;
+  trailerAsset?: FleetAssetPacket;
   cargo?: string;
   cargoMass?: number;
   sourceCity?: string;
@@ -329,7 +336,33 @@ export async function POST(request: Request) {
   const hasJob =
     p.hasJob !== false &&
     Boolean(p.cargo || p.sourceCity || p.destinationCity || p.jobKey);
-  if (hasJob && !job) {
+  const fleet = await evaluateFleetCompliance({
+    vtcId: p.vtcId,
+    userId: p.userId,
+    game: p.game!,
+    tripId,
+    truck: p.truckAsset,
+    trailer: p.trailerAsset,
+    odometerKm: p.odometerKm,
+    hasJob,
+  });
+  if (hasJob && !job && fleet.status === "blocked") {
+    lifecycle = "fleet_blocked";
+    await db.batch([
+      db.prepare(
+        `INSERT OR IGNORE INTO trips (id,vtc_id,user_id,game,source_city,destination_city,cargo,status,started_at)
+         VALUES (?,?,?,?,?,?,?,'blocked_vehicle',?)`,
+      ).bind(tripId,p.vtcId,p.userId,p.game,p.sourceCity??null,p.destinationCity??null,p.cargo??null,recorded),
+      db.prepare(`UPDATE trips SET status='blocked_vehicle' WHERE id=?`).bind(tripId),
+      db.prepare(
+        `INSERT INTO trip_reviews (id,trip_id,status,reason)
+         VALUES (?,?,'rejected',?)
+         ON CONFLICT(trip_id) DO UPDATE SET status='rejected',reason=excluded.reason`,
+      ).bind(randomId(),tripId,fleet.reason??"Gesperrtes Fahrzeug verwendet"),
+      db.prepare(`UPDATE point_ledger SET status='rejected' WHERE trip_id=? AND status='provisional'`).bind(tripId),
+      db.prepare(`UPDATE speed_incidents SET status='rejected' WHERE trip_id=? AND status='provisional'`).bind(tripId),
+    ]);
+  } else if (hasJob && !job) {
     const jobId = randomId();
     await db.batch([
       db
@@ -370,6 +403,7 @@ export async function POST(request: Request) {
           recorded,
           recorded,
         ),
+      db.prepare(`UPDATE trips SET status='started' WHERE id=? AND status='blocked_vehicle'`).bind(tripId),
     ]);
     job = {
       id: jobId,
@@ -418,7 +452,23 @@ export async function POST(request: Request) {
       p.vtcId,
     );
   }
-  if (job) {
+  if (job && fleet.status === "blocked") {
+    tripId = job.tripId;
+    lifecycle = "fleet_blocked";
+    await db.batch([
+      db.prepare(
+        `UPDATE trip_jobs SET status='blocked_vehicle',last_seen_at=?,last_odometer_km=? WHERE id=?`,
+      ).bind(recorded,p.odometerKm??null,job.id),
+      db.prepare(`UPDATE trips SET status='blocked_vehicle' WHERE id=?`).bind(tripId),
+      db.prepare(
+        `INSERT INTO trip_reviews (id,trip_id,status,reason)
+         VALUES (?,?,'rejected',?)
+         ON CONFLICT(trip_id) DO UPDATE SET status='rejected',reason=excluded.reason`,
+      ).bind(randomId(),tripId,fleet.reason??"Gesperrtes Fahrzeug verwendet"),
+      db.prepare(`UPDATE point_ledger SET status='rejected' WHERE trip_id=? AND status='provisional'`).bind(tripId),
+      db.prepare(`UPDATE speed_incidents SET status='rejected' WHERE trip_id=? AND status='provisional'`).bind(tripId),
+    ]);
+  } else if (job) {
     tripId = job.tripId;
     const distance = Math.max(
       0,
@@ -531,16 +581,16 @@ export async function POST(request: Request) {
           .bind(tripId),
       ]);
     } else {
-      lifecycle = job.status === "interrupted" ? "resumed" : "active";
+      lifecycle = ["interrupted", "blocked_vehicle"].includes(job.status) ? "resumed" : "active";
       await db.batch([
         db
           .prepare(
-            `UPDATE trip_jobs SET status='active',interrupted_at=NULL,last_seen_at=?,last_odometer_km=? WHERE id=? AND status IN ('active','interrupted')`,
+            `UPDATE trip_jobs SET status='active',interrupted_at=NULL,last_seen_at=?,last_odometer_km=? WHERE id=? AND status IN ('active','interrupted','blocked_vehicle')`,
           )
           .bind(recorded, p.odometerKm ?? null, job.id),
         db
           .prepare(
-            `UPDATE trips SET status='started',distance_km=?,damage=MAX(damage,?) WHERE id=? AND status IN ('started','interrupted')`,
+            `UPDATE trips SET status='started',distance_km=?,damage=MAX(damage,?) WHERE id=? AND status IN ('started','interrupted','blocked_vehicle')`,
           )
           .bind(
             distance,
@@ -598,6 +648,12 @@ export async function POST(request: Request) {
     db.prepare(`DELETE FROM live_positions WHERE datetime(updated_at)<datetime('now','-1 day')`),
   ]);
   if (deliveredNow) await notifyDiscordDelivery(tripId, p.vtcId);
+  await updateFleetVehicleState({
+    result: fleet,
+    userId: p.userId,
+    hasJob,
+    event,
+  });
   const points =
     job && !["cancelled", "pending_driver", "confirmed", "approved"].includes(lifecycle)
       ? await scoreSpeed(p, tripId, recorded)
@@ -628,11 +684,12 @@ export async function POST(request: Request) {
       },
       navigation: {distance: p.navigationDistance,time: p.navigationTime,speedLimitKph: p.navigationSpeedLimitKph},
       systems: {brakeAirPressure: p.brakeAirPressure,waterTemperature: p.waterTemperature,batteryVoltage: p.batteryVoltage},
+      fleet,
     },
     p.vtcId,
   );
   return Response.json(
-    { accepted: true, tripId, jobKey, lifecycle, points, recordedAt: recorded },
+    { accepted: true, tripId, jobKey, lifecycle, points, fleet, recordedAt: recorded },
     { status: 202 },
   );
 }

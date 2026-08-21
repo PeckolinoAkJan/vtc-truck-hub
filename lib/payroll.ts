@@ -1,4 +1,5 @@
 import { platformEnv, randomId } from "@/lib/platform";
+import { tripFleetCompliance } from "@/lib/fleet-compliance";
 
 type TripRow = {
   id: string;
@@ -219,6 +220,11 @@ export async function createOrUpdateTripPayroll(
     .bind(tripId)
     .first<TripRow>();
   if (!trip) throw new Error("Fahrt nicht gefunden");
+  const fleet = await tripFleetCompliance(trip.id);
+  if (fleet?.status === "blocked")
+    throw new Error(fleet.reason || "Die Fahrt ist wegen eines gesperrten Fahrzeugs nicht abrechenbar");
+  if (fleet?.status === "review")
+    throw new Error(fleet.reason || "Die Fahrzeugzuordnung muss vor der Abrechnung geprüft werden");
   const periodBase = String(trip.completedAt || new Date().toISOString()).slice(0, 7);
   type PayrollTarget = {
     id: string;
@@ -402,6 +408,46 @@ export async function submitDeliveredTrip(tripId: string) {
   if (["cancelled", "rejected", "started", "interrupted", "paused"].includes(trip.status))
     throw new Error("Diese Fahrt ist noch nicht zur Abrechnung bereit");
 
+  const fleet = await tripFleetCompliance(trip.id);
+  if (fleet?.status === "blocked") {
+    await db.batch([
+      db.prepare(`UPDATE trips SET status='blocked_vehicle' WHERE id=?`).bind(trip.id),
+      db.prepare(
+        `INSERT INTO trip_reviews (id,trip_id,status,reason)
+         VALUES (?,?,'rejected',?)
+         ON CONFLICT(trip_id) DO UPDATE SET status='rejected',reason=excluded.reason`,
+      ).bind(randomId(),trip.id,fleet.reason||"Gesperrtes Fahrzeug verwendet"),
+    ]);
+    return {
+      payrollId: null,
+      netCents: 0,
+      reservation: null,
+      tripId: trip.id,
+      vtcId: trip.vtcId,
+      userId: trip.userId,
+      status: "fleet_blocked",
+    };
+  }
+  if (fleet?.status === "review") {
+    await db.batch([
+      db.prepare(`UPDATE trips SET status='pending_review' WHERE id=?`).bind(trip.id),
+      db.prepare(
+        `INSERT INTO trip_reviews (id,trip_id,status,reason)
+         VALUES (?,?,'pending_review',?)
+         ON CONFLICT(trip_id) DO UPDATE SET status='pending_review',reason=excluded.reason`,
+      ).bind(randomId(),trip.id,fleet.reason||"Fahrzeugzuordnung prüfen"),
+    ]);
+    return {
+      payrollId: null,
+      netCents: 0,
+      reservation: null,
+      tripId: trip.id,
+      vtcId: trip.vtcId,
+      userId: trip.userId,
+      status: "pending_review",
+    };
+  }
+
   const result = await createOrUpdateTripPayroll(trip.id, trip.userId);
   if (trip.status === "pending_driver") {
     await db.batch([
@@ -409,7 +455,7 @@ export async function submitDeliveredTrip(tripId: string) {
         .prepare(
           `INSERT INTO trip_reviews (id,trip_id,status,driver_confirmed_at)
            VALUES (?,?,'driver_confirmed',CURRENT_TIMESTAMP)
-           ON CONFLICT(trip_id) DO UPDATE SET status='driver_confirmed',driver_confirmed_at=CURRENT_TIMESTAMP`,
+           ON CONFLICT(trip_id) DO UPDATE SET status='driver_confirmed',reason=NULL,driver_confirmed_at=CURRENT_TIMESTAMP`,
         )
         .bind(randomId(), trip.id),
       db.prepare(`UPDATE trips SET status='confirmed' WHERE id=? AND status='pending_driver'`).bind(trip.id),

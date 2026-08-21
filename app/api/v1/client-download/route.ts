@@ -1,8 +1,8 @@
 import { ensureDatabase, platformEnv } from "@/lib/platform";
 
 const CURRENT_RELEASE = {
-  version: "1.3.1",
-  checksum: "9D730A039BB65F5A8424C650231020E6319FDED52792BFDDC37E1F5BA3F306F4",
+  version: "1.4.0",
+  checksum: null as string | null,
 };
 
 export async function GET() {
@@ -27,7 +27,11 @@ export async function GET() {
   // Existing installations can already contain the release row from before the
   // workflow attached the final installer checksum. Repair that row lazily so
   // both the current response and all future updater checks are verifiable.
-  if (release?.version === CURRENT_RELEASE.version && !release.checksum) {
+  if (
+    release?.version === CURRENT_RELEASE.version &&
+    !release.checksum &&
+    CURRENT_RELEASE.checksum
+  ) {
     await db.prepare(
       `UPDATE client_versions
        SET checksum = ?

@@ -214,3 +214,35 @@ test("delivered trips reach payroll automatically and paid months use supplement
   assert.match(client, /Automatisch übermittelt/);
   assert.match(payrollPage, /Übermittlung erneut versuchen/);
 });
+
+test("fleet bindings block maintenance assets before trip approval and payroll", async () => {
+  const [schema, compliance, fleetApi, telemetry, payroll, client, clientUi, plugin, fleetPage] = await Promise.all([
+    readFile(new URL("../lib/platform.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/fleet-compliance.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/fleet/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/telemetry/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/payroll.ts", import.meta.url), "utf8"),
+    readFile(new URL("../desktop-client/ConvoyHub.Client/MainWindow.xaml.cs", import.meta.url), "utf8"),
+    readFile(new URL("../desktop-client/ConvoyHub.Client/MainWindow.xaml", import.meta.url), "utf8"),
+    readFile(new URL("../desktop-client/ConvoyHub.ScsPlugin/convoyhub_plugin.cpp", import.meta.url), "utf8"),
+    readFile(new URL("../app/fuhrpark/page.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS vehicle_game_bindings/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS trip_vehicle_usage/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS fleet_incidents/);
+  assert.match(compliance, /\["maintenance", "defective", "out_of_service", "sold"\]/);
+  assert.match(compliance, /updateFleetVehicleState/);
+  assert.match(compliance, /refreshBindingUsage/);
+  assert.match(fleetApi, /startMaintenance/);
+  assert.match(fleetApi, /fleet_maintenance/);
+  assert.match(telemetry, /fleet_blocked/);
+  assert.match(telemetry, /updateFleetVehicleState/);
+  assert.match(payroll, /tripFleetCompliance/);
+  assert.match(client, /SAPI\.SpVoice/);
+  assert.match(client, /Bitte nutzen Sie ein anderes Fahrzeug oder einen anderen Auflieger/);
+  assert.match(clientUi, /x:Name="FleetWarningPanel"/);
+  assert.match(plugin, /SCS_TELEMETRY_CONFIG_truck/);
+  assert.match(plugin, /SCS_TELEMETRY_CONFIG_trailer/);
+  assert.match(fleetPage, /Spielkopplung/);
+  assert.match(fleetPage, /Warnton und Sprachansage im Client aktivieren/);
+});

@@ -51,7 +51,7 @@ export async function GET(request: Request) {
     game = url.searchParams.get("game"),
     status = url.searchParams.get("status"),
     q = url.searchParams.get("q");
-  let sql = `SELECT t.id,t.vtc_id AS vtcId,t.user_id AS userId,u.display_name AS driver,t.game,t.mode,t.source_city AS sourceCity,t.destination_city AS destinationCity,t.cargo,t.distance_km AS distanceKm,t.fuel_liters AS fuelLiters,t.damage,t.income,t.status,t.started_at AS startedAt,t.completed_at AS completedAt,t.telemetry_source AS telemetrySource,r.status AS reviewStatus,r.reason AS reviewReason FROM trips t LEFT JOIN users u ON u.id=t.user_id LEFT JOIN trip_reviews r ON r.trip_id=t.id WHERE t.vtc_id=?`;
+  let sql = `SELECT t.id,t.vtc_id AS vtcId,t.user_id AS userId,u.display_name AS driver,t.game,t.mode,t.source_city AS sourceCity,t.destination_city AS destinationCity,t.cargo,t.distance_km AS distanceKm,t.fuel_liters AS fuelLiters,t.damage,t.income,t.status,t.started_at AS startedAt,t.completed_at AS completedAt,t.telemetry_source AS telemetrySource,r.status AS reviewStatus,r.reason AS reviewReason,f.compliance_status AS fleetStatus,f.block_reason AS fleetReason,tv.number AS truckNumber,rv.number AS trailerNumber FROM trips t LEFT JOIN users u ON u.id=t.user_id LEFT JOIN trip_reviews r ON r.trip_id=t.id LEFT JOIN trip_vehicle_usage f ON f.trip_id=t.id LEFT JOIN vehicles tv ON tv.id=f.truck_vehicle_id LEFT JOIN vehicles rv ON rv.id=f.trailer_vehicle_id WHERE t.vtc_id=?`;
   const args: unknown[] = [vtcId];
   if (mine) {
     sql += ` AND t.user_id=?`;

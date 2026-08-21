@@ -6,12 +6,16 @@ import {
   platformEnv,
   randomId,
   requireVtcPermission,
+  resolveVtcId,
 } from "@/lib/platform";
+import { refreshBindingUsage } from "@/lib/fleet-compliance";
+import { ensureFinanceAccount } from "@/lib/payroll";
 
 type Body = {
   action?: string;
   vtcId?: string;
   vehicleId?: string;
+  bindingId?: string;
   reservationId?: string;
   data?: Record<string, unknown>;
 };
@@ -34,7 +38,7 @@ export async function GET(request: Request) {
       .first();
   if (!member && !(await requireVtcPermission(request, vtcId, "manage_fleet")))
     return apiError("Keine Mitgliedschaft", 403);
-  const [vehicles, maintenance, reservations, transfers, drivers] =
+  const [vehicles, maintenance, reservations, transfers, drivers, bindings, incidents, policy] =
     await Promise.all([
       db
         .prepare(
@@ -66,6 +70,34 @@ export async function GET(request: Request) {
         )
         .bind(vtcId)
         .all(),
+      db
+        .prepare(
+          `SELECT b.id,b.vehicle_id AS vehicleId,b.asset_type AS assetType,b.game,b.game_config_id AS gameConfigId,
+                  b.display_name AS displayName,b.license_plate AS licensePlate,b.last_seen_at AS lastSeenAt,
+                  v.number AS vehicleNumber,v.status AS vehicleStatus,u.display_name AS detectedBy
+           FROM vehicle_game_bindings b
+           LEFT JOIN vehicles v ON v.id=b.vehicle_id
+           LEFT JOIN users u ON u.id=b.paired_user_id
+           WHERE b.vtc_id=? AND b.active=1 ORDER BY b.last_seen_at DESC LIMIT 300`,
+        )
+        .bind(vtcId)
+        .all(),
+      db
+        .prepare(
+          `SELECT i.*,u.display_name AS driver_name,v.number AS vehicle_number
+           FROM fleet_incidents i LEFT JOIN users u ON u.id=i.user_id LEFT JOIN vehicles v ON v.id=i.vehicle_id
+           WHERE i.vtc_id=? ORDER BY i.resolved_at IS NULL DESC,i.created_at DESC LIMIT 300`,
+        )
+        .bind(vtcId)
+        .all(),
+      db
+        .prepare(
+          `SELECT unpaired_action AS unpairedAction,maintenance_due_action AS maintenanceDueAction,
+                  external_trailers_allowed AS externalTrailersAllowed,voice_warnings AS voiceWarnings
+           FROM fleet_policies WHERE vtc_id=?`,
+        )
+        .bind(vtcId)
+        .first(),
     ]);
   const rows = vehicles.results as Array<Record<string, unknown>>,
     km = rows.reduce((n, v) => n + Number(v.mileage || 0), 0),
@@ -83,6 +115,14 @@ export async function GET(request: Request) {
     reservations: reservations.results,
     transfers: transfers.results,
     drivers: drivers.results,
+    bindings: bindings.results,
+    incidents: incidents.results,
+    policy: policy ?? {
+      unpairedAction: "review",
+      maintenanceDueAction: "warn",
+      externalTrailersAllowed: 1,
+      voiceWarnings: 1,
+    },
     stats: {
       total: rows.length,
       available: rows.filter((v) => v.status === "available").length,
@@ -129,13 +169,93 @@ export async function POST(request: Request) {
   }
   const actor = await requireVtcPermission(request, vtcId, "manage_fleet");
   if (!actor) return apiError("Fuhrparkrecht erforderlich", 403);
+  if (b.action === "savePolicy") {
+    const unpairedAction = clean(d.unpairedAction, 20);
+    const maintenanceDueAction = clean(d.maintenanceDueAction, 20);
+    if (!["review", "block"].includes(unpairedAction))
+      return apiError("Ungültige Regel für ungekoppelte Fahrzeuge");
+    if (!["warn", "block"].includes(maintenanceDueAction))
+      return apiError("Ungültige Wartungsregel");
+    await db.prepare(
+      `INSERT INTO fleet_policies
+       (vtc_id,unpaired_action,maintenance_due_action,external_trailers_allowed,voice_warnings,updated_by,updated_at)
+       VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)
+       ON CONFLICT(vtc_id) DO UPDATE SET
+         unpaired_action=excluded.unpaired_action,maintenance_due_action=excluded.maintenance_due_action,
+         external_trailers_allowed=excluded.external_trailers_allowed,voice_warnings=excluded.voice_warnings,
+         updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP`,
+    ).bind(
+      vtcId,
+      unpairedAction,
+      maintenanceDueAction,
+      d.externalTrailersAllowed ? 1 : 0,
+      d.voiceWarnings ? 1 : 0,
+      actor.id,
+    ).run();
+    await audit("fleet.policy.saved", "fleet_policy", vtcId, actor.id, d, vtcId);
+    return Response.json({ saved: true });
+  }
+  if (b.action === "pairBinding") {
+    if (!b.bindingId || !b.vehicleId) return apiError("Erkennung und Fahrzeug erforderlich");
+    const binding = await db.prepare(
+      `SELECT asset_type AS assetType FROM vehicle_game_bindings WHERE id=? AND vtc_id=? AND active=1`,
+    ).bind(b.bindingId, vtcId).first<{ assetType: string }>();
+    const vehicle = await db.prepare(
+      `SELECT type FROM vehicles WHERE id=? AND vtc_id=? AND status<>'sold'`,
+    ).bind(b.vehicleId, vtcId).first<{ type: string }>();
+    if (!binding || !vehicle) return apiError("Erkennung oder Fahrzeug nicht gefunden", 404);
+    if (binding.assetType !== vehicle.type) return apiError("LKW und Auflieger können nicht miteinander gekoppelt werden");
+    await db.prepare(
+      `UPDATE vehicle_game_bindings SET vehicle_id=?,paired_user_id=?,last_seen_at=CURRENT_TIMESTAMP WHERE id=? AND vtc_id=?`,
+    ).bind(b.vehicleId, actor.id, b.bindingId, vtcId).run();
+    await refreshBindingUsage(vtcId, b.bindingId, b.vehicleId);
+    await audit("fleet.binding.paired", "vehicle", b.vehicleId, actor.id, { bindingId: b.bindingId }, vtcId);
+    return Response.json({ saved: true });
+  }
+  if (b.action === "unpairBinding") {
+    if (!b.bindingId) return apiError("Erkennung fehlt");
+    await db.prepare(
+      `UPDATE vehicle_game_bindings SET vehicle_id=NULL,paired_user_id=?,last_seen_at=CURRENT_TIMESTAMP WHERE id=? AND vtc_id=?`,
+    ).bind(actor.id, b.bindingId, vtcId).run();
+    await refreshBindingUsage(vtcId, b.bindingId, null);
+    await audit("fleet.binding.unpaired", "vehicle_binding", b.bindingId, actor.id, {}, vtcId);
+    return Response.json({ saved: true });
+  }
+  if (b.action === "resolveIncident") {
+    const id = clean(d.id, 100);
+    if (!id) return apiError("Vorfall fehlt");
+    await db.prepare(`UPDATE fleet_incidents SET resolved_at=CURRENT_TIMESTAMP WHERE id=? AND vtc_id=?`).bind(id, vtcId).run();
+    await audit("fleet.incident.resolved", "fleet_incident", id, actor.id, {}, vtcId);
+    return Response.json({ saved: true });
+  }
   if (b.action === "save") {
     const id = b.vehicleId || randomId(),
       number = clean(d.number, 40),
       brand = clean(d.brand, 80),
-      model = clean(d.model, 80);
+      model = clean(d.model, 80),
+      vehicleType = clean(d.type, 20) || "truck",
+      vehicleStatus = clean(d.status, 30) || "available";
     if (!number || !brand || !model)
       return apiError("Fahrzeugnummer, Marke und Modell sind Pflicht");
+    if (!["truck", "trailer"].includes(vehicleType))
+      return apiError("Ungültiger Fahrzeugtyp");
+    if (![
+      "available",
+      "reserved",
+      "in_use",
+      "maintenance",
+      "defective",
+      "out_of_service",
+      "sold",
+    ].includes(vehicleStatus))
+      return apiError("Ungültiger Fahrzeugstatus");
+    if (b.vehicleId) {
+      const existing = await db
+        .prepare(`SELECT id FROM vehicles WHERE id=? AND vtc_id=?`)
+        .bind(b.vehicleId, vtcId)
+        .first();
+      if (!existing) return apiError("Fahrzeug nicht gefunden", 404);
+    }
     await db.batch([
       db
         .prepare(
@@ -145,12 +265,12 @@ export async function POST(request: Request) {
           id,
           vtcId,
           number,
-          clean(d.type, 20) || "truck",
+          vehicleType,
           brand,
           model,
           clean(d.licensePlate, 40) || null,
-          Number(d.mileage) || 0,
-          clean(d.status, 30) || "available",
+          Math.max(0, Number(d.mileage) || 0),
+          vehicleStatus,
           clean(d.assignedUserId, 100) || null,
         ),
       db
@@ -167,7 +287,7 @@ export async function POST(request: Request) {
           clean(d.chassis, 100) || null,
           clean(d.axleConfig, 60) || null,
           Number(d.tankCapacity) || null,
-          Math.round(Number(d.purchasePriceCents) || 0),
+          Math.max(0, Math.round(Number(d.purchasePriceCents) || 0)),
           clean(d.purchaseDate, 20) || null,
           d.leasing ? 1 : 0,
           clean(d.location, 100) || null,
@@ -192,6 +312,9 @@ export async function POST(request: Request) {
   if (b.action === "maintenance") {
     if (!b.vehicleId || !clean(d.description))
       return apiError("Fahrzeug und Beschreibung erforderlich");
+    const maintenanceStatus = clean(d.status, 20) || "planned";
+    if (!["planned", "in_progress"].includes(maintenanceStatus))
+      return apiError("Neue Werkstattaufträge müssen geplant oder in Arbeit sein");
     const id = randomId();
     await db.batch([
       db
@@ -202,11 +325,11 @@ export async function POST(request: Request) {
           id,
           clean(d.type, 60) || "maintenance",
           clean(d.description, 2000),
-          Math.round(Number(d.costCents) || 0),
-          Number(d.mileage) || null,
+          Math.max(0, Math.round(Number(d.costCents) || 0)),
+          Number(d.mileage) > 0 ? Number(d.mileage) : null,
           clean(d.scheduledAt, 30) || null,
-          d.status === "completed" ? new Date().toISOString() : null,
-          clean(d.status, 20) || "planned",
+          null,
+          maintenanceStatus,
           clean(d.workshop, 120) || null,
           actor.id,
           b.vehicleId,
@@ -214,9 +337,9 @@ export async function POST(request: Request) {
         ),
       db
         .prepare(
-          `UPDATE vehicles SET status=CASE WHEN ?='completed' THEN status ELSE 'maintenance' END WHERE id=? AND vtc_id=?`,
+          `UPDATE vehicles SET status=CASE WHEN ?='in_progress' THEN 'maintenance' ELSE status END WHERE id=? AND vtc_id=?`,
         )
-        .bind(clean(d.status, 20), b.vehicleId, vtcId),
+        .bind(maintenanceStatus, b.vehicleId, vtcId),
     ]);
     await audit(
       "fleet.maintenance.created",
@@ -228,8 +351,50 @@ export async function POST(request: Request) {
     );
     return Response.json({ saved: true, id });
   }
+  if (b.action === "startMaintenance") {
+    const id = clean(d.id, 100);
+    const record = await db
+      .prepare(
+        `SELECT m.vehicle_id AS vehicleId,m.status
+         FROM maintenance_records m JOIN vehicles v ON v.id=m.vehicle_id
+         WHERE m.id=? AND v.vtc_id=?`,
+      )
+      .bind(id, vtcId)
+      .first<{ vehicleId: string; status: string }>();
+    if (!record) return apiError("Wartung nicht gefunden", 404);
+    if (record.status === "completed") return apiError("Wartung ist bereits abgeschlossen", 409);
+    await db.batch([
+      db
+        .prepare(`UPDATE maintenance_records SET status='in_progress' WHERE id=?`)
+        .bind(id),
+      db
+        .prepare(`UPDATE vehicles SET status='maintenance' WHERE id=? AND vtc_id=?`)
+        .bind(record.vehicleId, vtcId),
+    ]);
+    await audit("fleet.maintenance.started", "maintenance", id, actor.id, { vehicleId: record.vehicleId }, vtcId);
+    return Response.json({ saved: true });
+  }
   if (b.action === "completeMaintenance") {
     const id = clean(d.id, 100);
+    const record = await db
+      .prepare(
+        `SELECT m.vehicle_id AS vehicleId,m.cost_cents AS costCents,m.status,
+                m.description,v.number,COALESCE(m.mileage,v.mileage) AS mileage
+         FROM maintenance_records m
+         JOIN vehicles v ON v.id=m.vehicle_id
+         LEFT JOIN vehicle_details d ON d.vehicle_id=v.id
+         WHERE m.id=? AND v.vtc_id=?`,
+      )
+      .bind(id, vtcId)
+      .first<{
+        vehicleId: string;
+        costCents: number;
+        status: string;
+        description: string;
+        number: string;
+        mileage: number;
+      }>();
+    if (!record) return apiError("Wartung nicht gefunden", 404);
     await db.batch([
       db
         .prepare(
@@ -238,10 +403,53 @@ export async function POST(request: Request) {
         .bind(id, vtcId),
       db
         .prepare(
-          `UPDATE vehicles SET status='available' WHERE id=(SELECT vehicle_id FROM maintenance_records WHERE id=?)`,
+          `UPDATE vehicles SET status=CASE
+             WHEN EXISTS (SELECT 1 FROM maintenance_records m WHERE m.vehicle_id=vehicles.id AND m.status='in_progress') THEN 'maintenance'
+             WHEN status='maintenance' THEN 'available' ELSE status END
+           WHERE id=(SELECT vehicle_id FROM maintenance_records WHERE id=?)`,
         )
         .bind(id),
+      db
+        .prepare(
+          `UPDATE vehicle_details
+           SET next_maintenance_km=?+COALESCE(maintenance_interval_km,30000),
+               reliability=MIN(100,reliability+5),updated_at=CURRENT_TIMESTAMP
+           WHERE vehicle_id=?`,
+        )
+        .bind(Math.max(0, Number(record.mileage) || 0), record.vehicleId),
     ]);
+    if (record.status !== "completed" && Number(record.costCents) > 0) {
+      const existing = await db
+        .prepare(
+          `SELECT id FROM finance_entries
+           WHERE reference_type='fleet_maintenance' AND reference_id=? AND status='posted'`,
+        )
+        .bind(id)
+        .first();
+      if (!existing) {
+        const accountId = await ensureFinanceAccount(vtcId);
+        await db.batch([
+          db
+            .prepare(
+              `INSERT INTO finance_entries
+               (id,account_id,amount_cents,category,cost_center,description,reference_type,reference_id,created_by)
+               VALUES (?,?,-?,'Wartungskosten','Fuhrpark',?,'fleet_maintenance',?,?)`,
+            )
+            .bind(
+              randomId(),
+              accountId,
+              Math.round(Number(record.costCents)),
+              `${record.number}: ${record.description}`,
+              id,
+              actor.id,
+            ),
+          db
+            .prepare(`UPDATE finance_accounts SET balance_cents=balance_cents-? WHERE id=?`)
+            .bind(Math.round(Number(record.costCents)), accountId),
+        ]);
+      }
+    }
+    await audit("fleet.maintenance.completed", "maintenance", id, actor.id, { vehicleId: record.vehicleId }, vtcId);
     return Response.json({ saved: true });
   }
   if (b.action === "reviewReservation") {
@@ -251,11 +459,13 @@ export async function POST(request: Request) {
       return apiError("Ungültiger Status");
     const row = await db
       .prepare(
-        `SELECT r.vehicle_id AS vehicleId,r.user_id AS userId FROM vehicle_reservations r JOIN vehicles v ON v.id=r.vehicle_id WHERE r.id=? AND v.vtc_id=?`,
+        `SELECT r.vehicle_id AS vehicleId,r.user_id AS userId,v.status AS vehicleStatus FROM vehicle_reservations r JOIN vehicles v ON v.id=r.vehicle_id WHERE r.id=? AND v.vtc_id=?`,
       )
       .bind(b.reservationId, vtcId)
-      .first<{ vehicleId: string; userId: string }>();
+      .first<{ vehicleId: string; userId: string; vehicleStatus: string }>();
     if (!row) return apiError("Reservierung nicht gefunden", 404);
+    if (status === "approved" && !["available", "reserved"].includes(row.vehicleStatus))
+      return apiError("Das Fahrzeug ist wegen seines aktuellen Status nicht reservierbar", 409);
     await db.batch([
       db
         .prepare(
@@ -264,9 +474,18 @@ export async function POST(request: Request) {
         .bind(status, actor.id, b.reservationId),
       db
         .prepare(
-          `UPDATE vehicles SET status=CASE WHEN ?='approved' THEN 'reserved' ELSE 'available' END,assigned_user_id=CASE WHEN ?='approved' THEN ? ELSE assigned_user_id END WHERE id=?`,
+          `UPDATE vehicles SET
+             status=CASE
+               WHEN ?='approved' THEN 'reserved'
+               WHEN status='reserved' AND assigned_user_id=? THEN 'available'
+               ELSE status END,
+             assigned_user_id=CASE
+               WHEN ?='approved' THEN ?
+               WHEN status='reserved' AND assigned_user_id=? THEN NULL
+               ELSE assigned_user_id END
+           WHERE id=?`,
         )
-        .bind(status, status, row.userId, row.vehicleId),
+        .bind(status, row.userId, status, row.userId, row.userId, row.vehicleId),
     ]);
     return Response.json({ saved: true });
   }
@@ -274,10 +493,14 @@ export async function POST(request: Request) {
     if (!b.vehicleId || !clean(d.toBranch))
       return apiError("Zielniederlassung erforderlich");
     const current = await db
-        .prepare(`SELECT branch FROM vehicle_details WHERE vehicle_id=?`)
-        .bind(b.vehicleId)
+        .prepare(
+          `SELECT d.branch FROM vehicles v LEFT JOIN vehicle_details d ON d.vehicle_id=v.id
+           WHERE v.id=? AND v.vtc_id=? AND v.status<>'sold'`,
+        )
+        .bind(b.vehicleId, vtcId)
         .first<{ branch: string | null }>(),
       id = randomId();
+    if (!current) return apiError("Fahrzeug nicht gefunden oder bereits verkauft", 404);
     await db.batch([
       db
         .prepare(
@@ -293,9 +516,11 @@ export async function POST(request: Request) {
         ),
       db
         .prepare(
-          `UPDATE vehicle_details SET branch=?,updated_at=CURRENT_TIMESTAMP WHERE vehicle_id=?`,
+          `INSERT INTO vehicle_details (vehicle_id,branch,updated_at)
+           VALUES (?,?,CURRENT_TIMESTAMP)
+           ON CONFLICT(vehicle_id) DO UPDATE SET branch=excluded.branch,updated_at=CURRENT_TIMESTAMP`,
         )
-        .bind(clean(d.toBranch, 100), b.vehicleId),
+        .bind(b.vehicleId, clean(d.toBranch, 100)),
     ]);
     return Response.json({ saved: true, id });
   }
@@ -319,4 +544,3 @@ export async function POST(request: Request) {
   }
   return apiError("Ungültige Fuhrparkaktion");
 }
-import {resolveVtcId} from "@/lib/platform";

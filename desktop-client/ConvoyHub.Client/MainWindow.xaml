@@ -316,6 +316,12 @@
                         <TextBlock x:Name="PointCounterText" Text="0 PUNKTE" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" />
                       </Grid>
                     </Border>
+                    <Border x:Name="FleetWarningPanel" Visibility="Collapsed" Background="#4A2025" BorderBrush="#CD5C5C" BorderThickness="2" Padding="13" Margin="0,10,0,0">
+                      <StackPanel>
+                        <TextBlock x:Name="FleetWarningText" Text="FUHRPARK-SPERRE" Foreground="#FF8B8B" FontSize="11" FontWeight="Black" />
+                        <TextBlock x:Name="FleetWarningDetail" Text="Bitte verwenden Sie ein anderes Fahrzeug oder einen anderen Auflieger." Foreground="White" FontSize="10" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,5,0,0" />
+                      </StackPanel>
+                    </Border>
                   </StackPanel>
                 </Border>
                 <Border Grid.Column="1" Style="{StaticResource PanelCard}" Margin="8,0,0,0">
@@ -544,6 +550,7 @@
                   <CheckBox x:Name="MinimizeTrayCheck" Content="Beim Schließen in den Infobereich minimieren" Margin="0,12,0,0" Foreground="White" IsChecked="True" />
                   <CheckBox x:Name="AutoSyncCheck" Content="Offline-Fahrten automatisch nachsynchronisieren" Margin="0,12,0,0" Foreground="White" IsChecked="True" />
                   <CheckBox x:Name="AutoTripCheck" Content="Fahrten bei Auftragsannahme automatisch starten" Margin="0,12,0,0" Foreground="White" IsChecked="True" />
+                  <CheckBox x:Name="VoiceWarningCheck" Content="Fuhrparksperren mit Warnton und deutscher Sprachansage melden" Margin="0,12,0,0" Foreground="White" IsChecked="True" />
                   <Button Content="EINSTELLUNGEN SPEICHERN" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,22,0,0" Click="SaveSettings_Click" />
                 </StackPanel>
               </Border>
