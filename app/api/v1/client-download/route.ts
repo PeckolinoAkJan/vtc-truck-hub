@@ -1,8 +1,14 @@
 import { ensureDatabase, platformEnv } from "@/lib/platform";
 
+const CURRENT_RELEASE = {
+  version: "1.3.1",
+  checksum: "9D730A039BB65F5A8424C650231020E6319FDED52792BFDDC37E1F5BA3F306F4",
+};
+
 export async function GET() {
   await ensureDatabase();
-  const release = await platformEnv().DB.prepare(
+  const db = platformEnv().DB;
+  let release = await db.prepare(
     `SELECT version, download_url AS downloadUrl, checksum, release_notes AS releaseNotes
      FROM client_versions
      WHERE product = 'desktop-client'
@@ -18,7 +24,19 @@ export async function GET() {
     releaseNotes: string | null;
   }>();
 
+  // Existing installations can already contain the release row from before the
+  // workflow attached the final installer checksum. Repair that row lazily so
+  // both the current response and all future updater checks are verifiable.
+  if (release?.version === CURRENT_RELEASE.version && !release.checksum) {
+    await db.prepare(
+      `UPDATE client_versions
+       SET checksum = ?
+       WHERE product = 'desktop-client' AND version = ?`,
+    ).bind(CURRENT_RELEASE.checksum, CURRENT_RELEASE.version).run();
+    release = { ...release, checksum: CURRENT_RELEASE.checksum };
+  }
+
   return Response.json({ release: release ?? null }, {
-    headers: { "Cache-Control": "public, max-age=60, stale-while-revalidate=300" },
+    headers: { "Cache-Control": "no-store" },
   });
 }
