@@ -44,10 +44,20 @@ type PositionedTruck = {
 };
 
 const POLLING_INTERVAL_MS = 3000;
+const LIVE_MAP_CRS = L.CRS.Simple;
+// Die SVG-Lkw zeigen in ihrer Ausgangslage nach oben. Das entspricht dem
+// SCS-Heading 0°; positive SCS-Werte und CSS-Rotationen laufen im Uhrzeigersinn.
+const TRUCK_HEADING_OFFSET_DEGREES = 0;
 
-// Affine ETS2-Kalibrierung aus Berlin, Paris und Aberdeen. Die kleinen
-// Querkoeffizienten gleichen die in den drei Referenzpunkten messbare
-// Kartenrotation bzw. Scherung aus.
+// Affine ETS2-Kalibrierung im linearen L.CRS.Simple-Koordinatenraum aus
+// Berlin, Paris und Aberdeen. Game_X mappt auf Leaflet-Lng, Game_Z auf
+// Leaflet-Lat. Die kleinen Querkoeffizienten gleichen die in den drei
+// Referenzpunkten messbare Rotation/Scherung des Tile-Exports aus.
+//
+// Referenzkontrolle:
+// Berlin   ( 10397.3,  -9112.53) -> [-103.2841796875,  154.59375]
+// Paris    (-31951.0,   4863.97) -> [-125.23291015625,  92.26123046875]
+// Aberdeen (-38961.3, -54849.50) -> [ -37.388671875,   81.9365234375]
 const ETS2_MAP_CALIBRATION = {
   latFromX: 0.00003155232523285867,
   latFromZ: -0.0014748000668329926,
@@ -95,7 +105,9 @@ const positionToLeaflet = (position: LivePosition): LatLngTuple | null => {
 
 const normalizedHeading = (value: number | null | undefined) => {
   const heading = finiteNumber(value) ?? 0;
-  return ((heading % 360) + 360) % 360;
+  return (
+    ((heading + TRUCK_HEADING_OFFSET_DEGREES) % 360 + 360) % 360
+  );
 };
 
 const escapeHtml = (value: string) =>
@@ -150,10 +162,11 @@ const truckIcon = (
 ) => {
   const simulator = game?.trim().toLowerCase() === "ats" ? "ats" : "ets2";
   const svg = simulator === "ats" ? ATS_TRUCK_SVG : ETS2_TRUCK_SVG;
+  const rotation = normalizedHeading(heading);
 
   return L.divIcon({
     className: `truck-marker-container truck-marker-container--${simulator}`,
-    html: `<div class="truck-marker-content"><div class="truck-icon truck-icon--${simulator}" aria-hidden="true" style="transform: rotate(${normalizedHeading(heading)}deg)">${svg}</div><span class="truck-label">${escapeHtml(label)}</span></div>`,
+    html: `<div class="truck-marker-content"><div class="truck-icon truck-icon--${simulator}" data-heading="${rotation}" aria-hidden="true" style="transform: rotate(${rotation}deg) !important; transform-origin: center center !important;">${svg}</div><span class="truck-label">${escapeHtml(label)}</span></div>`,
     iconSize: [104, 72],
     iconAnchor: [52, 25],
     popupAnchor: [0, -30],
@@ -261,7 +274,7 @@ export default function LiveMapClient() {
         attributionControl={false}
         center={[0, 0]}
         className="leaflet-live-map__canvas"
-        crs={L.CRS.Simple}
+        crs={LIVE_MAP_CRS}
         maxZoom={14}
         minZoom={-8}
         scrollWheelZoom
