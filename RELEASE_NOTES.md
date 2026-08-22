@@ -1,6 +1,6 @@
-# VTC Truck Hub Desktop Client 1.0.0
+# VTC Truck Hub Desktop Client 1.4.0
 
-Erster vollständiger Windows-Release für ETS2 und ATS.
+Aktueller Windows-Release für ETS2 und ATS.
 
 ## Enthalten
 
@@ -15,6 +15,10 @@ Erster vollständiger Windows-Release für ETS2 und ATS.
 - Geschwindigkeitswarnung und Punkteerfassung ab 95 km/h
 - Diagnose, lokale Protokolle, Autostart und Infobereich
 - Automatische GitHub-Releaseprüfung mit sicherem Download, SHA-256-Prüfung, Installation nach Programmende und Neustart
+- Live-GPS für die geschützte Live-Map mit sicherer Offline-Nachsynchronisierung
+- Automatische Übergabe gelieferter Fahrten an das Lohnbüro und Nachtragsabrechnungen
+- Fuhrparkprüfung mit Spielkopplung, Wartungs- und Fahrzeugblockaden
+- Akustische und gesprochene Warnungen bei Fuhrpark- und Compliance-Ereignissen
 
 ## Installation
 

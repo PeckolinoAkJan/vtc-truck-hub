@@ -172,14 +172,16 @@ test("desktop login is gated and telemetry credentials are account-bound", async
 });
 
 test("live map uses projected SCS telemetry without invented drivers", async () => {
-  const [mapPage, liveApi, telemetryApi, projector, client, platform, payroll] = await Promise.all([
+  const [mapPage, liveMapClient, liveApi, telemetryApi, projector, client, platform, payroll, testDriver] = await Promise.all([
     readFile(new URL("../app/live-map/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/LiveMapClient.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/v1/live/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/v1/telemetry/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../desktop-client/ConvoyHub.Client/ScsCoordinateProjector.cs", import.meta.url), "utf8"),
     readFile(new URL("../desktop-client/ConvoyHub.Client/MainWindow.xaml.cs", import.meta.url), "utf8"),
     readFile(new URL("../lib/platform.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/v1/payroll/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../test-driver.mjs", import.meta.url), "utf8"),
   ]);
   assert.match(projector, /Lambert conformal/);
   assert.match(projector, /ets2-base-lambert-v1/);
@@ -197,11 +199,52 @@ test("live map uses projected SCS telemetry without invented drivers", async () 
   assert.doesNotMatch(telemetryApi, /supplied === configured/);
   assert.match(platform, /CREATE TABLE IF NOT EXISTS live_positions/);
   assert.match(liveApi, /internal-exact/);
-  assert.match(liveApi, /public-delayed-and-rounded/);
+  assert.match(liveApi, /public-near-real-time-anonymized/);
   assert.match(liveApi, /public_visible/);
-  assert.match(mapPage, /Fahrer verfolgen/);
-  assert.match(mapPage, /KEINE AKTIVEN FAHRER/);
-  assert.doesNotMatch(mapPage, /LoadProbe|simulation|simulated/i);
+  assert.match(liveApi, /FROM live_positions lp/);
+  assert.match(liveApi, /COALESCE\(driver_pref\.show_exact_to_vtc,1\)=1/);
+  assert.match(liveApi, /lp\.game_x AS gameX/);
+  assert.match(liveApi, /lp\.game_z AS gameZ/);
+  assert.match(liveApi, /datetime\(lp\.updated_at\)>datetime\('now','-15 seconds'\)/);
+  assert.doesNotMatch(liveApi, /ROW_NUMBER\(\) OVER|-10 minutes|-25 minutes/);
+  assert.match(liveApi, /"Cache-Control": "private, no-store, max-age=0"/);
+  assert.doesNotMatch(liveApi, /EventEmitter|text\/event-stream|liveMapEmitter/);
+  assert.match(mapPage, /^"use client";/);
+  assert.doesNotMatch(mapPage, /^import LiveMapClient/m);
+  assert.match(mapPage, /import\("\.\.\/\.\.\/components\/LiveMapClient"\)/);
+  assert.match(mapPage, /useState\(false\)/);
+  assert.match(mapPage, /setIsMounted\(true\)/);
+  assert.doesNotMatch(mapPage, /next\/dynamic|ssr:\s*false/);
+  assert.match(liveMapClient, /import "leaflet\/dist\/leaflet\.css"/);
+  assert.match(liveMapClient, /L\.CRS\.Simple/);
+  assert.match(liveMapClient, /MapContainer/);
+  assert.match(liveMapClient, /height: "100vh"/);
+  assert.match(liveMapClient, /minHeight: "500px"/);
+  assert.match(liveMapClient, /setPositions\(\[\]\)/);
+  assert.match(testDriver, /node:sqlite/);
+  assert.match(testDriver, /\.wrangler\/state\/v3\/d1\/miniflare-D1DatabaseObject/);
+  assert.match(testDriver, /ON CONFLICT\(user_id\) DO UPDATE/);
+  assert.match(testDriver, /const telemetryRecordedAt = now/);
+  assert.match(liveMapClient, /TileLayer/);
+  assert.match(liveMapClient, /Marker/);
+  assert.match(liveMapClient, /Popup/);
+  assert.match(liveMapClient, /POLLING_INTERVAL_MS = 3000/);
+  assert.match(liveMapClient, /useState<"ets2" \| "ats">\("ets2"\)/);
+  assert.match(liveMapClient, /setActiveGame/);
+  assert.match(liveMapClient, /key=\{activeGame\}/);
+  assert.match(liveMapClient, /https:\/\/livemap\.vtc-truck-hub\.de\/\$\{activeGame\}\/\{z\}\/\{x\}\/\{y\}\.png/);
+  assert.match(liveMapClient, /telemetryGame === activeGame/);
+  assert.match(liveMapClient, /scsToLeaflet/);
+  assert.match(liveMapClient, /gameX/);
+  assert.match(liveMapClient, /gameZ/);
+  assert.match(liveMapClient, /truck-marker-container/);
+  assert.match(liveMapClient, /truck-svg--ets2/);
+  assert.match(liveMapClient, /truck-svg--ats/);
+  assert.match(liveMapClient, /truck-label/);
+  assert.match(liveMapClient, /escapeHtml/);
+  assert.match(liveMapClient, /truckIcon\(position\.game, position\.heading, name\)/);
+  assert.match(liveMapClient, /KEINE AKTIVEN FAHRER/);
+  assert.doesNotMatch(liveMapClient, /EventSource|simulation|simulated/i);
   assert.match(payroll, /confirmTrip/);
   assert.match(payroll, /personalClientKeyName/);
   assert.match(payroll, /authenticatedUser\(request\)/);

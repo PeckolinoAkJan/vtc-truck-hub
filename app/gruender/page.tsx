@@ -8,7 +8,7 @@ type Economy = { centsPerKm: number; jobBonusCents: number; damagePenalty: numbe
 type AdminData = {
   founder: { id: string; email: string; displayName: string };
   economy: Economy[];
-  payrolls: Array<{ id: string; driver: string; period: string; status: string; netCents: number }>;
+  payrolls: Array<{ id: string; vtcId: string; driver: string; period: string; status: string; netCents: number }>;
   tickets: Array<{ id: string; number: number; subject: string; category: string; status: string; priority: string }>;
   discord: Array<Record<string, any>>;
   rules: Array<{ id: string; guildId: string; title: string; body: string }>;

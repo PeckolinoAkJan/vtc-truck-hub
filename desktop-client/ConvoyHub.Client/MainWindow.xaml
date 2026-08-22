@@ -94,7 +94,7 @@
         </StackPanel>
         <StackPanel Grid.Row="3">
           <Border Height="1" Background="#263945" Margin="0,0,0,12" />
-          <TextBlock x:Name="VersionText" Text="CLIENT v1.0.0" Foreground="#5F7480" FontSize="8" Margin="10,0" />
+          <TextBlock x:Name="VersionText" Text="CLIENT v1.4.0" Foreground="#5F7480" FontSize="8" Margin="10,0" />
           <TextBlock Text="SCS TELEMETRY SDK 1.14" Foreground="#5F7480" FontSize="8" Margin="10,4,0,0" />
         </StackPanel>
       </Grid>

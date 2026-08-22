@@ -14,6 +14,31 @@ type TrailRow = {
   recordedAt: string;
 };
 
+type PublicLiveRow = {
+  userId: string;
+  vtcId: string;
+  vtcName: string | null;
+  game: string;
+  latitude: number | null;
+  longitude: number | null;
+  gameX: number;
+  gameY: number | null;
+  gameZ: number;
+  coordinateAccuracy: string | null;
+  projectionProfile: string | null;
+  heading: number;
+  speedKph: number;
+  recordedAt: string;
+};
+
+const responseHeaders = {
+  "Cache-Control": "private, no-store, max-age=0",
+  Vary: "Cookie, Authorization",
+};
+
+const jsonResponse = (body: unknown) =>
+  Response.json(body, { headers: responseHeaders });
+
 const ageSeconds = (value: string) => {
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp)
@@ -78,8 +103,12 @@ export async function GET(request: Request) {
     const trailRows = await db.prepare(
       `SELECT t.user_id AS userId,t.latitude,t.longitude,t.recorded_at AS recordedAt
        FROM telemetry t
+       JOIN live_positions lp ON lp.user_id=t.user_id AND lp.vtc_id=t.vtc_id AND lp.active=1
        JOIN memberships viewer ON viewer.vtc_id=t.vtc_id AND viewer.user_id=? AND viewer.status='active'
-       WHERE datetime(t.recorded_at)>datetime('now','-30 minutes')
+       LEFT JOIN live_map_preferences driver_pref ON driver_pref.user_id=t.user_id
+       WHERE COALESCE(driver_pref.show_exact_to_vtc,1)=1
+         AND datetime(lp.updated_at)>datetime('now','-5 minutes')
+         AND datetime(t.recorded_at)>datetime('now','-30 minutes')
        ORDER BY t.recorded_at DESC LIMIT 2400`,
     ).bind(user.id).all<TrailRow>();
 
@@ -87,7 +116,7 @@ export async function GET(request: Request) {
       const age = ageSeconds(row.recordedAt);
       return { ...row, ageSeconds: age, connectionStatus: connectionStatus(age) };
     });
-    return Response.json({
+    return jsonResponse({
       data,
       trails: buildTrails(trailRows.results),
       meta: {
@@ -102,46 +131,52 @@ export async function GET(request: Request) {
   }
 
   const rows = await db.prepare(
-    `SELECT t.user_id AS userId,t.vtc_id AS vtcId,v.name AS vtcName,t.game,
-      t.latitude,t.longitude,t.heading,t.speed_kph AS speedKph,t.truck,
-      t.source_city AS sourceCity,t.destination_city AS destinationCity,t.recorded_at AS recordedAt
-     FROM telemetry t
-     LEFT JOIN vtcs v ON v.id=t.vtc_id
-     LEFT JOIN live_map_preferences pref ON pref.user_id=t.user_id
-     JOIN (
-       SELECT delayed.user_id,MAX(delayed.recorded_at) AS latest
-       FROM telemetry delayed
-       LEFT JOIN live_map_preferences delayed_pref ON delayed_pref.user_id=delayed.user_id
-       WHERE datetime(delayed.recorded_at)<datetime('now','-10 minutes')
-         AND datetime(delayed.recorded_at)>datetime('now','-25 minutes')
-         AND COALESCE(delayed_pref.public_visible,1)=1
-       GROUP BY delayed.user_id
-     ) latest ON latest.user_id=t.user_id AND latest.latest=t.recorded_at
-     WHERE COALESCE(pref.public_visible,1)=1
-     ORDER BY t.recorded_at DESC`,
-  ).all<LiveRow>();
-  const data = rows.results.map((row, index) => ({
-    ...row,
-    userId: `Fahrer ${String(index + 1).padStart(2, "0")}`,
-    driverName: `Fahrer ${String(index + 1).padStart(2, "0")}`,
-    latitude: Math.round(Number(row.latitude) * 10) / 10,
-    longitude: Math.round(Number(row.longitude) * 10) / 10,
-    cargo: undefined,
-    server: undefined,
-    coordinateAccuracy: "privacy-rounded",
-    connectionStatus: "delayed",
-    ageSeconds: ageSeconds(row.recordedAt),
-  }));
-  return Response.json({
+    `SELECT lp.user_id AS userId,lp.vtc_id AS vtcId,v.name AS vtcName,lp.game,
+       lp.latitude,lp.longitude,lp.game_x AS gameX,lp.game_y AS gameY,lp.game_z AS gameZ,
+       lp.coordinate_accuracy AS coordinateAccuracy,lp.projection_profile AS projectionProfile,
+       lp.heading,lp.speed_kph AS speedKph,lp.updated_at AS recordedAt
+     FROM live_positions lp
+     LEFT JOIN live_map_preferences pref ON pref.user_id=lp.user_id
+     LEFT JOIN vtcs v ON v.id=lp.vtc_id
+     WHERE lp.active=1
+       AND COALESCE(pref.public_visible,1)=1
+       AND lp.game_x IS NOT NULL
+       AND lp.game_z IS NOT NULL
+       AND datetime(lp.updated_at)>datetime('now','-15 seconds')
+     ORDER BY lp.user_id`,
+  ).all<PublicLiveRow>();
+  const data = rows.results.map((row, index) => {
+    const age = ageSeconds(row.recordedAt);
+    return {
+      userId: `Fahrer ${String(index + 1).padStart(2, "0")}`,
+      driverName: `Fahrer ${String(index + 1).padStart(2, "0")}`,
+      vtcId: row.vtcId,
+      vtcName: row.vtcName,
+      game: row.game,
+      latitude: row.latitude == null ? null : Number(row.latitude),
+      longitude: row.longitude == null ? null : Number(row.longitude),
+      gameX: Number(row.gameX),
+      gameY: row.gameY == null ? null : Number(row.gameY),
+      gameZ: Number(row.gameZ),
+      heading: Number(row.heading),
+      speedKph: Math.round(Number(row.speedKph) / 10) * 10,
+      recordedAt: row.recordedAt,
+      coordinateAccuracy: row.coordinateAccuracy ?? "raw-scs-public",
+      projectionProfile: row.projectionProfile,
+      connectionStatus: connectionStatus(age),
+      ageSeconds: age,
+    };
+  });
+  return jsonResponse({
     data,
     trails: {},
     meta: {
       displayed: data.length,
-      privacy: "public-delayed-and-rounded",
-      delayMinutes: 10,
-      pollIntervalMs: 15000,
-      staleAfterSeconds: 1200,
-      removeAfterSeconds: 1500,
+      privacy: "public-near-real-time-anonymized",
+      delayMinutes: 0,
+      pollIntervalMs: 3000,
+      staleAfterSeconds: 15,
+      removeAfterSeconds: 15,
     },
   });
 }
